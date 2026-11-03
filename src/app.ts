@@ -4,12 +4,14 @@ import express, {
   type Response,
   type ErrorRequestHandler,
 } from "express";
+import authRoute from "./routes/auth.route.ts";
 import {AppError} from "./errors/AppError.ts";
 const app: Express = express();
 
 app.use(express.json());
 
 
+app.use("/api/users", authRoute);
 
 
 

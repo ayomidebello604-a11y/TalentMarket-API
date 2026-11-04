@@ -6,13 +6,14 @@ import express, {
 } from "express";
 import authRoute from "./routes/auth.route.ts";
 import {AppError} from "./errors/AppError.ts";
+import playerRouter from "./routes/player.route.ts";
 const app: Express = express();
 
 app.use(express.json());
 
 
 app.use("/api/users", authRoute);
-
+app.use("/api/players", playerRouter);
 
 
 

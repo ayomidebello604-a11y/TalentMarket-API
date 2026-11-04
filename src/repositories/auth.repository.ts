@@ -11,6 +11,12 @@ type RegisterUserInput = Omit<RegisterType, "password"> & {
     password_hash: string;
     role: string;
 };
+type FindUserByIdReturnType = {
+    userId: string, 
+    name: string,
+    email:string,
+    userType: "player" | "scout"
+}
 
 export const registerUser = async (user: RegisterUserInput): Promise<RegisterReturnType> => {
     const {name, email, password_hash, userType} = user;
@@ -28,6 +34,13 @@ export const findUserByEmail = async (
     const result = await pool.query<FindUserByEmailReturnType>(text, values);
     return result.rows[0] || null;
 };
+
+export const findUserById = async (id:string) : Promise<FindUserByIdReturnType> => {
+    const text = "SELECT user_id, name, email, user_type FROM users WHERE user_id =$1"
+    const value = [id]
+    const result = await pool.query<FindUserByIdReturnType>(text,value)
+    return result.rows[0]
+}
 
 
 export const updateUser = async (name: string, email: string,userId: string) : Promise<FindUserByEmailReturnType | null> => { 

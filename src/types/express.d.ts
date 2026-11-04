@@ -1,29 +1,17 @@
-import type {RegisterType,LoginType} from "../schemas/auth.schema.ts";
+import type { RegisterType, LoginType } from "../schemas/auth.schema.ts";
+import type { playerInput, updatePlayerInput, scoutInput } from "../schemas/user.schema.ts";
+
 declare global {
-    namespace Express {
-  interface Request {
-    validatedRegisterBody: RegisterType;
+  namespace Express {
+    interface Request {
+      validatedRegisterBody: RegisterType;
+      validatedLoginBody: LoginType;
+      userId: string;
+      userRole: string;
+      validatedPlayerInput: playerInput | updatePlayerInput;
+      validatedScoutInput: scoutInput;
+    }
   }
-    } }
+}
 
-    declare global {
-    namespace Express {
-  interface Request {
-    validatedLoginBody:  LoginType;
-  }
-    } }
-
-     declare global {
-    namespace Express {
-  interface Request {
-    userId:  string;
-  }
-    } }
-
- declare global {
-    namespace Express {
-  interface Request {
-    userRole: string;
-  }
-    } }
 export {};

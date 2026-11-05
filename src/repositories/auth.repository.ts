@@ -5,10 +5,12 @@ import type {RegisterReturnType} from "../types/auth.type.ts";
 type RegisterUserInput = Omit<RegisterType, "password"> & {
     password_hash: string;
 };
- type FindUserByEmailReturnType = {
+type FindUserByEmailReturnType = {
     user_id: string;
+    name: string;
     email: string;
     password_hash: string;
+    user_type: string;
     role: string;
 };
 type FindUserByIdReturnType = {
@@ -20,7 +22,7 @@ type FindUserByIdReturnType = {
 
 export const registerUser = async (user: RegisterUserInput): Promise<RegisterReturnType> => {
     const {name, email, password_hash, userType} = user;
-    const text = "INSERT INTO users (name, email, password_hash, user_type) VALUES ($1, $2, $3, $4) RETURNING *";
+    const text = "INSERT INTO users (name, email, password_hash, user_type) VALUES ($1, $2, $3, $4) RETURNING *, user_type AS role";
     const values = [name, email, password_hash, userType];
     const result = await pool.query<RegisterReturnType>(text, values);
     return result.rows[0];
@@ -29,7 +31,7 @@ export const registerUser = async (user: RegisterUserInput): Promise<RegisterRet
 export const findUserByEmail = async (
     email: string,
 ): Promise<FindUserByEmailReturnType | null> => {
-    const text = 'SELECT * FROM users WHERE email = $1';
+    const text = 'SELECT *, user_type AS role FROM users WHERE email = $1';
     const values = [email];
     const result = await pool.query<FindUserByEmailReturnType>(text, values);
     return result.rows[0] || null;
@@ -42,9 +44,8 @@ export const findUserById = async (id:string) : Promise<FindUserByIdReturnType> 
     return result.rows[0]
 }
 
-
 export const updateUser = async (name: string, email: string,userId: string) : Promise<FindUserByEmailReturnType | null> => { 
-    const text = "UPDATE users SET name = $1, email =$2, WhHERE user_id=$3 RETURNING *";
+    const text = "UPDATE users SET name = $1, email = $2 WHERE user_id = $3 RETURNING *, user_type AS role";
     const values = [name, email, userId];
     const result = await pool.query<FindUserByEmailReturnType>(text, values);
     return result.rows[0] || null;

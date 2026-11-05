@@ -7,12 +7,27 @@ export type PlayerProfileReturnType = {
     ratings: number;
     contact_details: string;
     name?: string;
+    email?: string;
 };
 
 export const getAllProfile = async (): Promise<PlayerProfileReturnType[]> => {
     const text = "SELECT * FROM players ORDER BY ratings DESC";
     const result = await pool.query<PlayerProfileReturnType>(text);
-    return result.rows;
+
+    const playersWithUser = await Promise.all(
+        result.rows.map(async (player) => {
+            const userText = "SELECT name, email FROM users WHERE user_id = $1";
+            const userResult = await pool.query<{ name: string; email: string }>(userText, [player.player_id]);
+            const user = userResult.rows[0];
+            return {
+                ...player,
+                name: user ? user.name : undefined,
+                email: user ? user.email : undefined,
+            };
+        })
+    );
+
+    return playersWithUser;
 };
 
 export const createPlayerProfile = async (
@@ -33,27 +48,52 @@ export const getPlayerProfileById = async (playerId: string): Promise<PlayerProf
     const player = result.rows[0];
     if (!player) return null;
 
-    const userText = "SELECT name FROM users WHERE user_id = $1";
-    const userResult = await pool.query<{ name: string }>(userText, [playerId]);
+    const userText = "SELECT name, email FROM users WHERE user_id = $1";
+    const userResult = await pool.query<{ name: string; email: string }>(userText, [playerId]);
     const user = userResult.rows[0];
 
     return {
         ...player,
-        name: user ? user.name : undefined
+        name: user ? user.name : undefined,
+        email: user ? user.email : undefined,
     };
 };
 
 export const getPlayerProfileByName = async (name: string): Promise<PlayerProfileReturnType | null> => {
-    const userText = "SELECT * FROM players WHERE name ILIKE $1 ORDER BY name ";
-    const userResult = await pool.query<PlayerProfileReturnType>(userText, [name]);
-    return userResult.rows[0] ?? null;
+    const userText = "SELECT user_id, name, email FROM users WHERE name ILIKE $1";
+    const userResult = await pool.query<{ user_id: string; name: string; email: string }>(userText, [`%${name}%`]);
+    const user = userResult.rows[0];
+    if (!user) return null;
+
+    const player = await getPlayerProfileById(user.user_id);
+    if (!player) return null;
+
+    return {
+        ...player,
+        name: user.name,
+        email: user.email,
+    };
 };
 
 export const getPlayersByPosition = async (position: string): Promise<PlayerProfileReturnType[]> => {
     const text = "SELECT * FROM players WHERE position = $1 ORDER BY ratings DESC";
     const values = [position];
     const result = await pool.query<PlayerProfileReturnType>(text, values);
-    return result.rows;
+
+    const playersWithUser = await Promise.all(
+        result.rows.map(async (player) => {
+            const userText = "SELECT name, email FROM users WHERE user_id = $1";
+            const userResult = await pool.query<{ name: string; email: string }>(userText, [player.player_id]);
+            const user = userResult.rows[0];
+            return {
+                ...player,
+                name: user ? user.name : undefined,
+                email: user ? user.email : undefined,
+            };
+        })
+    );
+
+    return playersWithUser;
 };
 
 export const updatePlayerProfile = async (

@@ -13,6 +13,9 @@ import type { playerInput, updatePlayerInput } from "../schemas/user.schema.ts";
 export const getAllPlayers = async (req: Request, res: Response, next: NextFunction) => {
     try {
         const players = await getAllPlayersService();
+        if (!players || players.length === 0) {
+            return res.status(404).json({ message: "No players found" });
+        }
         res.status(200).json(players);
     } catch(error) {
         next(error);
@@ -22,6 +25,12 @@ export const getAllPlayers = async (req: Request, res: Response, next: NextFunct
 export const createPlayerProfile = async (req: Request, res: Response, next: NextFunction) => {
     try {
         const playerId = req.userId;
+        const userRole = req.userRole;
+
+        if (userRole && userRole !== "player" && userRole !== "admin") {
+            return res.status(403).json({ message: "Only users registered as players can create a player profile" });
+        }
+
         const input = req.validatedPlayerInput as playerInput;
 
         const existingPlayer = await getPlayerByIdService(playerId);
@@ -62,6 +71,9 @@ export const getPlayersByPosition = async (req: Request, res: Response, next: Ne
             return res.status(400).json({ message: "Position query parameter is required" });
         }
         const players = await getPlayersByPositionService(position);
+        if(!players || players.length === 0) {
+            return res.status(404).json({ message: "No players found for the specified position" });
+        }
         res.status(200).json(players);
     } catch(error) {
         next(error);

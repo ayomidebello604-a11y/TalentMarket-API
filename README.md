@@ -1,6 +1,6 @@
 # ⚽ TalentMarket API
 
-> A robust, type-safe RESTful API for scouting football talent, managing player profiles, and handling authentication with role-based permissions.
+> A robust, type-safe RESTful API for scouting football talent, managing player and scout profiles, and handling authentication with role-based permissions.
 
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Express](https://img.shields.io/badge/Express-5.x-black?style=for-the-badge&logo=express&logoColor=white)](https://expressjs.com/)
@@ -28,24 +28,29 @@ TalentMarket/
 │   │   └── database.ts
 │   ├── controllers/        # Request handling and HTTP response orchestration
 │   │   ├── auth.controller.ts
-│   │   └── player.controller.ts
+│   │   ├── player.controller.ts
+│   │   └── scout.controller.ts
 │   ├── errors/             # Custom application error classes
 │   │   └── AppError.ts
 │   ├── middlewares/        # Authentication & request validation middlewares
 │   │   ├── auth.validation.ts
-│   │   └── player.validation.ts
+│   │   ├── player.validation.ts
+│   │   └── scout.validation.ts
 │   ├── repositories/       # Direct SQL queries and DB interaction
 │   │   ├── auth.repository.ts
-│   │   └── player.repository.ts
+│   │   ├── player.repository.ts
+│   │   └── scout.repository.ts
 │   ├── routes/             # Express route definitions
 │   │   ├── auth.route.ts
-│   │   └── player.route.ts
+│   │   ├── player.route.ts
+│   │   └── scout.route.ts
 │   ├── schemas/            # Zod validation schemas and inferred types
 │   │   ├── auth.schema.ts
 │   │   └── user.schema.ts
 │   ├── services/           # Business logic and cross-entity operations
 │   │   ├── auth.service.ts
-│   │   └── player.service.ts
+│   │   ├── player.service.ts
+│   │   └── scout.service.ts
 │   ├── types/              # Ambient TypeScript declarations and types
 │   │   ├── auth.type.ts
 │   │   └── express.d.ts
@@ -67,14 +72,14 @@ $$\text{Client} \longrightarrow \text{Routes} \longrightarrow \text{Middlewares 
 ## 🗄️ Database Design
 
 ### `users` Table
-Stores authentication credentials and user roles.
+Stores authentication credentials and user types.
 | Column | Type | Constraints | Description |
 | :--- | :--- | :--- | :--- |
 | `user_id` | `UUID` | `PRIMARY KEY`, Default `gen_random_uuid()` | Unique user identifier |
 | `name` | `VARCHAR` | `NOT NULL` | Full name of the user |
 | `email` | `VARCHAR` | `UNIQUE`, `NOT NULL` | User email address |
 | `password_hash`| `TEXT` | `NOT NULL` | Argon2 hashed password |
-| `user_type` / `role` | `VARCHAR` | `NOT NULL` | Role: `"player"`, `"scout"`, `"admin"` |
+| `user_type` | `VARCHAR` | `NOT NULL` | Account type: `"player"`, `"scout"`, `"admin"` |
 
 ### `players` Table
 Stores extended scouting profile metrics for player accounts.
@@ -84,6 +89,13 @@ Stores extended scouting profile metrics for player accounts.
 | `position` | `VARCHAR` | `NOT NULL` | Position: `"gk"`, `"def"`, `"mid"`, `"fwd"` |
 | `ratings` | `INTEGER` | `CHECK (ratings BETWEEN 49 AND 100)` | Scouting rating (49 – 100) |
 | `contact_details` | `VARCHAR` | `NOT NULL` | Phone number or contact handle |
+
+### `scouts` Table
+Stores profile details for scout accounts.
+| Column | Type | Constraints | Description |
+| :--- | :--- | :--- | :--- |
+| `scout_id` | `UUID` | `PRIMARY KEY`, `REFERENCES users(user_id) ON DELETE CASCADE` | Matches owner's `user_id` |
+| `contact_details` | `VARCHAR` | `NOT NULL` | Phone number or organization contact |
 
 ---
 
@@ -136,26 +148,35 @@ Authorization: Bearer <your_jwt_token>
 
 ### 🔐 Authentication Endpoints (`/api/users`)
 
-#### 1. Register a User
+#### 1. Register a User (Player or Scout)
 * **Endpoint:** `POST /api/users/register`
 * **Access:** Public
-* **Request Body:**
+* **Request Body (Player):**
   ```json
   {
-    "name": "Alex Iwobi",
-    "email": "alex@example.com",
+    "name": "Victor Osimhen",
+    "email": "victor@example.com",
     "password": "Password123!",
     "userType": "player"
   }
   ```
-* **Success Response (201):**
+* **Request Body (Scout):**
+  ```json
+  {
+    "name": "Mikel Arteta",
+    "email": "mikel@arsenal.com",
+    "password": "Password123!",
+    "userType": "scout"
+  }
+  ```
+* **Success Response (201):** *(Password hash is stripped from response)*
   ```json
   {
     "message": "User registered successfully",
     "newUser": {
       "user_id": "c1f7a0b2-3c4d-4e5f-a6b7-c8d9e0f1a2b3",
-      "name": "Alex Iwobi",
-      "email": "alex@example.com",
+      "name": "Victor Osimhen",
+      "email": "victor@example.com",
       "user_type": "player"
     }
   }
@@ -167,17 +188,17 @@ Authorization: Bearer <your_jwt_token>
 * **Request Body:**
   ```json
   {
-    "email": "alex@example.com",
+    "email": "victor@example.com",
     "password": "Password123!"
   }
   ```
-* **Success Response (200):**
+* **Success Response (200):** *(Returns JWT token and user info without password hash)*
   ```json
   {
     "message": "User logged in successfully",
     "user": {
       "user_id": "c1f7a0b2-3c4d-4e5f-a6b7-c8d9e0f1a2b3",
-      "email": "alex@example.com",
+      "email": "victor@example.com",
       "role": "player"
     },
     "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
@@ -190,8 +211,8 @@ Authorization: Bearer <your_jwt_token>
 * **Request Body:**
   ```json
   {
-    "name": "Alexander Iwobi",
-    "email": "alex.iwobi@example.com"
+    "name": "Victor James Osimhen",
+    "email": "victor.osimhen@example.com"
   }
   ```
 
@@ -206,22 +227,23 @@ Authorization: Bearer <your_jwt_token>
 #### 1. Get All Players
 * **Endpoint:** `GET /api/players`
 * **Access:** Protected (`Bearer Token`)
-* **Response (200):**
+* **Response (200):** *(Includes player profile details with `name` and `email` from users)*
   ```json
   [
     {
       "player_id": "c1f7a0b2-3c4d-4e5f-a6b7-c8d9e0f1a2b3",
-      "position": "mid",
-      "ratings": 86,
+      "position": "fwd",
+      "ratings": 88,
       "contact_details": "+2348012345678",
-      "name": "Alex Iwobi"
+      "name": "Victor Osimhen",
+      "email": "victor@example.com"
     }
   ]
   ```
 
 #### 2. Create Player Profile
 * **Endpoint:** `POST /api/players`
-* **Access:** Protected (`Bearer Token`)
+* **Access:** Protected (`Bearer Token` — must be registered as `player`)
 * **Validation Rules:**
   * `position`: `"gk" | "def" | "mid" | "fwd"`
   * `ratings`: Integer between `49` and `100`
@@ -229,8 +251,8 @@ Authorization: Bearer <your_jwt_token>
 * **Request Body:**
   ```json
   {
-    "position": "mid",
-    "ratings": 86,
+    "position": "fwd",
+    "ratings": 88,
     "contactDetails": "+2348012345678"
   }
   ```
@@ -238,16 +260,16 @@ Authorization: Bearer <your_jwt_token>
   ```json
   {
     "player_id": "c1f7a0b2-3c4d-4e5f-a6b7-c8d9e0f1a2b3",
-    "position": "mid",
-    "ratings": 86,
+    "position": "fwd",
+    "ratings": 88,
     "contact_details": "+2348012345678"
   }
   ```
 
 #### 3. Search Player by Name
-* **Endpoint:** `GET /api/players/name?name=Alex`
+* **Endpoint:** `GET /api/players/name?name=Victor`
 * **Access:** Protected (`Bearer Token`)
-* **Query Parameters:** `name` *(string, required)*
+* **Query Parameters:** `name` *(string, required — matches partial names case-insensitively)*
 
 #### 4. Filter Players by Position
 * **Endpoint:** `GET /api/players/position?position=fwd`
@@ -260,7 +282,7 @@ Authorization: Bearer <your_jwt_token>
 * **Request Body (all fields optional):**
   ```json
   {
-    "ratings": 89,
+    "ratings": 91,
     "contactDetails": "+2348099887766"
   }
   ```
@@ -269,8 +291,92 @@ Authorization: Bearer <your_jwt_token>
 * **Endpoint:** `DELETE /api/players`
 * **Access:** Protected (`Bearer Token`)
 * **Permissions & Ownership:**
-  * **Regular User:** Automatically deletes the user's own profile based on their token ID.
+  * **Regular Player:** Automatically deletes the user's own profile based on their token ID.
   * **Admin:** Can delete any profile by providing `?playerId=<target_uuid>`.
+
+---
+
+### 🕵️‍♂️ Scouts Endpoints (`/api/scouts`)
+
+#### 1. Get All Scouts
+* **Endpoint:** `GET /api/scouts`
+* **Access:** Protected (`Bearer Token`)
+* **Response (200):** *(Includes scout details with `name` and `email` from users)*
+  ```json
+  {
+    "status": "success",
+    "scouts": [
+      {
+        "scout_id": "e4b2a1c0-1d2e-3f4a-5b6c-7d8e9f0a1b2c",
+        "contact_details": "+447123456789",
+        "name": "Mikel Arteta",
+        "email": "mikel@arsenal.com"
+      }
+    ]
+  }
+  ```
+
+#### 2. Create Scout Profile
+* **Endpoint:** `POST /api/scouts`
+* **Access:** Protected (`Bearer Token` — must be registered as `scout`)
+* **Validation Rules (Strict):**
+  * `contactDetails`: String between `11` and `30` characters
+  * *Extra unrecognized keys are strictly rejected*
+* **Request Body:**
+  ```json
+  {
+    "contactDetails": "+447123456789"
+  }
+  ```
+* **Response (201):**
+  ```json
+  {
+    "status": "success",
+    "scout": {
+      "scout_id": "e4b2a1c0-1d2e-3f4a-5b6c-7d8e9f0a1b2c",
+      "contact_details": "+447123456789"
+    }
+  }
+  ```
+
+#### 3. Get Scout by ID
+* **Endpoint:** `GET /api/scouts/:scoutId`
+* **Access:** Protected (`Bearer Token`)
+* **Response (200):**
+  ```json
+  {
+    "status": "success",
+    "scout": {
+      "user_scout": {
+        "user_id": "e4b2a1c0-1d2e-3f4a-5b6c-7d8e9f0a1b2c",
+        "name": "Mikel Arteta",
+        "email": "mikel@arsenal.com",
+        "user_type": "scout"
+      },
+      "scoutDetails": "+447123456789"
+    }
+  }
+  ```
+
+#### 4. Update Scout Contact Details
+* **Endpoint:** `PUT /api/scouts/:scoutId`
+* **Access:** Protected (`Bearer Token` — only the scout themselves or an admin can update)
+* **Request Body:**
+  ```json
+  {
+    "contactDetails": "+447998877665"
+  }
+  ```
+* **Response (200):**
+  ```json
+  {
+    "status": "success",
+    "scout": {
+      "scout_id": "e4b2a1c0-1d2e-3f4a-5b6c-7d8e9f0a1b2c",
+      "contact_details": "+447998877665"
+    }
+  }
+  ```
 
 ---
 
@@ -286,9 +392,9 @@ Errors follow a uniform JSON schema handled centrally by `errorHandler` in `src/
 
 | HTTP Status | Meaning | Scenario |
 | :--- | :--- | :--- |
-| `400 Bad Request` | Validation failure / malformed JSON | Invalid schema inputs |
+| `400 Bad Request` | Validation failure / malformed JSON | Invalid schema inputs or extra unexpected keys |
 | `401 Unauthorized`| Missing / invalid JWT token | Token missing or expired |
-| `403 Forbidden`   | Insufficient permissions | User attempting to delete someone else's profile |
+| `403 Forbidden`   | Insufficient permissions | Role mismatch or updating/deleting someone else's profile |
 | `404 Not Found`   | Resource not found | Profile or user ID does not exist |
 | `409 Conflict`    | Duplicate resource | Profile already created for user |
 | `500 Server Error`| Internal unhandled error | Database connection failure |
@@ -298,4 +404,3 @@ Errors follow a uniform JSON schema handled centrally by `errorHandler` in `src/
 ## 📜 License
 
 This project is licensed under the **ISC License**.
-

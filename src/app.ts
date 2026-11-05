@@ -7,6 +7,7 @@ import express, {
 import authRoute from "./routes/auth.route.ts";
 import {AppError} from "./errors/AppError.ts";
 import playerRouter from "./routes/player.route.ts";
+import scoutRouter from "./routes/scout.route.ts";
 const app: Express = express();
 
 app.use(express.json());
@@ -14,6 +15,7 @@ app.use(express.json());
 
 app.use("/api/users", authRoute);
 app.use("/api/players", playerRouter);
+app.use("/api/scouts", scoutRouter);
 
 
 

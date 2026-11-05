@@ -4,8 +4,6 @@ import { RegisterType } from "../schemas/auth.schema.ts";
 import { generateToken } from "../utils/jwt.ts";
 import { AppError } from "../errors/AppError.ts";
 
-
-
 export const registerUserService = async (user:RegisterType) => {
     const password_hash = await hashPassword(user.password);
     const inputs =  {
@@ -22,33 +20,40 @@ export const registerUserService = async (user:RegisterType) => {
 }
 
 export const LoginUserService = async (email: string, password: string) => {
-const user = await findUserByEmail(email);
-if (!user) {
-    throw new AppError("User not found",404);
-}
-const password_hash = user.password_hash
-const isValidPassword = await verifyPassword(password_hash, password);
-if (!isValidPassword) {
-    throw new AppError("Invalid password",401);
-}
+    const user = await findUserByEmail(email);
+    if (!user) {
+        throw new AppError("User not found",404);
+    }
+    const password_hash = user.password_hash;
+    const isValidPassword = await verifyPassword(password_hash, password);
+    if (!isValidPassword) {
+        throw new AppError("Invalid password",401);
+    }
 
-const access_token = await generateToken(user.user_id,user.role)
+    const role = user.user_type || user.role;
+    const access_token = await generateToken(user.user_id, role);
 
-const user_details = {
-    user,
-   access_token
-}
-return user_details;
-}
+    const { password_hash: _, ...safeUser } = user;
 
+    const user_details = {
+        user: {
+            ...safeUser,
+            role
+        },
+        access_token
+    };
+    return user_details;
+}
 
 export const updateUserService = async (name: string, email: string,userId: string) => {
     const updatedUser = await updateUser(name, email,userId);  
     if (!updatedUser) {
         throw new AppError("User not found", 404);
     }
-    return updatedUser;     
+    const { password_hash: _, ...safeUser } = updatedUser;
+    return safeUser;     
 }
+
 export const deleteUserService = async (userId: string) => {
     await removeUser(userId);
 }

@@ -75,3 +75,16 @@ export const verifyUserToken = async (req: Request, res: Response, next: NextFun
        next(error);
     }
 };
+
+
+
+export const authorizeRoles = (...allowedRoles: string[]) => {
+    return (req: Request, res: Response, next: NextFunction) => {
+        if (!req.userRole || !allowedRoles.includes(req.userRole)) {
+            return next(new AppError("You are not authorized to access this resource", 403));
+        }
+
+        next();
+    };
+};
+

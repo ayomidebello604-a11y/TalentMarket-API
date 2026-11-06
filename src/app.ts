@@ -3,20 +3,35 @@ import express, {
   type Request,
   type Response,
   type ErrorRequestHandler,
+  type NextFunction
 } from "express";
+import helmet from "helmet";
+import cookieParser from "cookie-parser";
 import authRoute from "./routes/auth.route.ts";
+import { corsConfig } from "./config/security.ts";
 import {AppError} from "./errors/AppError.ts";
 import playerRouter from "./routes/player.route.ts";
 import scoutRouter from "./routes/scout.route.ts";
+import { requestLogger } from "./middlewares/logger.middleware.ts";
+import scoutplayerRouter from "./routes/scout-player.route.ts";
+
 const app: Express = express();
 
+
+
+
+
+app.use(helmet())
+app.use(corsConfig);
 app.use(express.json());
+app.use(cookieParser());
+app.use(requestLogger);
 
 
 app.use("/api/users", authRoute);
 app.use("/api/players", playerRouter);
 app.use("/api/scouts", scoutRouter);
-
+app.use("/api/scout-players", scoutplayerRouter);
 
 
 

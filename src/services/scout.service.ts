@@ -4,7 +4,8 @@ import {
     createScoutProfile, 
     fetchAllScouts, 
     fetchScoutById, 
-    updateScout 
+    updateScout ,
+    removeScout
 } from "../repositories/scout.repository.ts";
 
 export const getAllscoutsService = async () => {
@@ -36,3 +37,11 @@ export const updateScoutContactdetailsService = async (scoutId: string, newConta
     const result = await updateScout(newContactDetails, scoutId);
     return result;
 };
+
+export const deleteScoutService = async (scoutId: string) => {
+    const scout = await fetchScoutById(scoutId);
+    if (!scout) {
+        throw new AppError("Scout not found", 404);
+    }
+    await removeScout(scoutId);
+}

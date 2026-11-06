@@ -58,3 +58,10 @@ export const updateScout = async (contactDetails: string, scoutId: string): Prom
     const result = await pool.query<createScoutReturnType>(text, value);
     return result.rows[0] ?? null;
 };
+
+
+export const removeScout = async (scoutId: string): Promise<void> => {
+    const text = "DELETE FROM scouts WHERE scout_id = $1";
+    const value = [scoutId];
+    await pool.query(text, value);
+};

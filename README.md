@@ -29,28 +29,33 @@ TalentMarket/
 │   ├── controllers/        # Request handling and HTTP response orchestration
 │   │   ├── auth.controller.ts
 │   │   ├── player.controller.ts
-│   │   └── scout.controller.ts
+│   │   ├── scout.controller.ts
+│   │   └── scout-player.controller.ts
 │   ├── errors/             # Custom application error classes
 │   │   └── AppError.ts
 │   ├── middlewares/        # Authentication & request validation middlewares
 │   │   ├── auth.validation.ts
 │   │   ├── player.validation.ts
-│   │   └── scout.validation.ts
+│   │   ├── scout.validation.ts
+│   │   └── uuid.validation.ts
 │   ├── repositories/       # Direct SQL queries and DB interaction
 │   │   ├── auth.repository.ts
 │   │   ├── player.repository.ts
-│   │   └── scout.repository.ts
+│   │   ├── scout.repository.ts
+│   │   └── scout-player.repository.ts
 │   ├── routes/             # Express route definitions
 │   │   ├── auth.route.ts
 │   │   ├── player.route.ts
-│   │   └── scout.route.ts
+│   │   ├── scout.route.ts
+│   │   └── scout-player.route.ts
 │   ├── schemas/            # Zod validation schemas and inferred types
 │   │   ├── auth.schema.ts
 │   │   └── user.schema.ts
 │   ├── services/           # Business logic and cross-entity operations
 │   │   ├── auth.service.ts
 │   │   ├── player.service.ts
-│   │   └── scout.service.ts
+│   │   ├── scout.service.ts
+│   │   └── scout-player.service.ts
 │   ├── types/              # Ambient TypeScript declarations and types
 │   │   ├── auth.type.ts
 │   │   └── express.d.ts
@@ -65,7 +70,7 @@ TalentMarket/
 ```
 
 ### Flow of a Request
-$$\text{Client} \longrightarrow \text{Routes} \longrightarrow \text{Middlewares (Auth + Zod)} \longrightarrow \text{Controller} \longrightarrow \text{Service} \longrightarrow \text{Repository} \longrightarrow \text{PostgreSQL}$$
+$$\text{Client} \longrightarrow \text{Routes} \longrightarrow \text{Middlewares (Auth + Zod + UUID)} \longrightarrow \text{Controller} \longrightarrow \text{Service} \longrightarrow \text{Repository} \longrightarrow \text{PostgreSQL}$$
 
 ---
 
@@ -96,6 +101,14 @@ Stores profile details for scout accounts.
 | :--- | :--- | :--- | :--- |
 | `scout_id` | `UUID` | `PRIMARY KEY`, `REFERENCES users(user_id) ON DELETE CASCADE` | Matches owner's `user_id` |
 | `contact_details` | `VARCHAR` | `NOT NULL` | Phone number or organization contact |
+
+### `scout_players` Table *(Many-to-Many Join Table)*
+Links scouts to the players they are tracking.
+| Column | Type | Constraints | Description |
+| :--- | :--- | :--- | :--- |
+| `scout_id` | `UUID` | `REFERENCES scouts(scout_id) ON DELETE CASCADE` | The scout doing the scouting |
+| `player_id` | `UUID` | `REFERENCES players(player_id) ON DELETE CASCADE` | The player being scouted |
+| — | — | `PRIMARY KEY (scout_id, player_id)` | Prevents duplicate scout-player pairs |
 
 ---
 
@@ -380,6 +393,68 @@ Authorization: Bearer <your_jwt_token>
 
 ---
 
+### 🔗 Scout-Player Endpoints (`/api/scouts/players`)
+
+> Manages the many-to-many scouting relationship between scouts and players. All endpoints require a valid Bearer token. Endpoints that write or read scout-specific data require the authenticated user to be a **scout**.
+
+#### 1. Scout a Player
+* **Endpoint:** `POST /api/scouts/players/:playerId`
+* **Access:** Protected (`Bearer Token` — must be registered as `scout`)
+* **URL Params:** `playerId` *(UUID of the player to scout)*
+* **Request Body:** None — `scoutId` is read from the JWT, `playerId` from the URL
+* **Response (201):**
+  ```json
+  {
+    "message": "Player scouted successfully",
+    "scoutingDetails": {
+      "scout_id": "e4b2a1c0-1d2e-3f4a-5b6c-7d8e9f0a1b2c",
+      "player_id": "c1f7a0b2-3c4d-4e5f-a6b7-c8d9e0f1a2b3"
+    }
+  }
+  ```
+
+#### 2. Get All Players I Am Scouting
+* **Endpoint:** `GET /api/scouts/players`
+* **Access:** Protected (`Bearer Token` — scout's own list)
+* **Response (200):**
+  ```json
+  {
+    "players": [
+      { "player_id": "c1f7a0b2-3c4d-4e5f-a6b7-c8d9e0f1a2b3" }
+    ]
+  }
+  ```
+
+#### 3. Get All Scouts for a Player
+* **Endpoint:** `GET /api/scouts/players/:playerId/scouts`
+* **Access:** Protected (`Bearer Token`)
+* **URL Params:** `playerId` *(UUID of the player)*
+* **Response (200):**
+  ```json
+  {
+    "scouts": [
+      { "scout_id": "e4b2a1c0-1d2e-3f4a-5b6c-7d8e9f0a1b2c" }
+    ]
+  }
+  ```
+
+#### 4. Remove a Player from Scout List
+* **Endpoint:** `DELETE /api/scouts/players/:playerId`
+* **Access:** Protected (`Bearer Token` — must be registered as `scout`)
+* **URL Params:** `playerId` *(UUID of the player to remove)*
+* **Request Body:** None
+* **Response (200):**
+  ```json
+  {
+    "message": "Player removed from scout's list",
+    "result": {
+      "player_id": "c1f7a0b2-3c4d-4e5f-a6b7-c8d9e0f1a2b3"
+    }
+  }
+  ```
+
+---
+
 ## 🛡️ Error Handling
 
 Errors follow a uniform JSON schema handled centrally by `errorHandler` in `src/app.ts`:
@@ -396,7 +471,7 @@ Errors follow a uniform JSON schema handled centrally by `errorHandler` in `src/
 | `401 Unauthorized`| Missing / invalid JWT token | Token missing or expired |
 | `403 Forbidden`   | Insufficient permissions | Role mismatch or updating/deleting someone else's profile |
 | `404 Not Found`   | Resource not found | Profile or user ID does not exist |
-| `409 Conflict`    | Duplicate resource | Profile already created for user |
+| `409 Conflict`    | Duplicate resource | Profile already created for user / player already scouted |
 | `500 Server Error`| Internal unhandled error | Database connection failure |
 
 ---

@@ -3,7 +3,8 @@ import {
     getAllscoutsService, 
     createScoutService, 
     getScoutByIdService, 
-    updateScoutContactdetailsService 
+    updateScoutContactdetailsService,
+    deleteScoutService
 } from "../services/scout.service.ts";
 import { fetchScoutById } from "../repositories/scout.repository.ts";
 
@@ -86,3 +87,24 @@ export const updateScoutContactDetails = async (req: Request<{ scoutId: string }
         next(error);
     }
 };
+
+
+export const deleteScout = async (req: Request<{ scoutId: string }>, res: Response, next: NextFunction) => {
+    try {
+        const scoutId = req.params.scoutId;
+        const loggedInUserId = req.userId;
+
+        if (!loggedInUserId) {
+            return res.status(401).json({ message: "Authentication required" });
+        }
+
+
+        await deleteScoutService(scoutId);
+        res.status(200).json({
+            status: "success",
+            message: "Scout profile deleted successfully"
+        });
+    } catch(error) {
+        next(error);
+    }
+};                      

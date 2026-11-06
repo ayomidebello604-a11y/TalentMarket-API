@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { verifyUserToken } from "../middlewares/auth.validation.ts";
+import { authorizeRoles, verifyUserToken } from "../middlewares/auth.validation.ts";
 import { 
     validatePlayerInput, 
     validatingUpdatePlayerInput 
@@ -22,6 +22,6 @@ playerRouter.post("/", validatePlayerInput, createPlayerProfile);
 playerRouter.get("/name", getPlayerByName);
 playerRouter.get("/position", getPlayersByPosition);
 playerRouter.put("/", validatingUpdatePlayerInput, updatePlayerProfile);
-playerRouter.delete("/", deletePlayerProfile);
+playerRouter.delete("/", authorizeRoles("admin","player"), deletePlayerProfile);
 
 export default playerRouter;

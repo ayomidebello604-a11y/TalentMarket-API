@@ -24,8 +24,9 @@ The project follows the standard **Controller-Service-Repository** pattern to en
 ```
 TalentMarket/
 ├── src/
-│   ├── config/             # Database connection pool setup (pg)
-│   │   └── database.ts
+│   ├── config/             # Database connection and security configuration
+│   │   ├── database.ts
+│   │   └── security.ts     # CORS and authentication rate limits
 │   ├── controllers/        # Request handling and HTTP response orchestration
 │   │   ├── auth.controller.ts
 │   │   ├── player.controller.ts
@@ -35,6 +36,7 @@ TalentMarket/
 │   │   └── AppError.ts
 │   ├── middlewares/        # Authentication & request validation middlewares
 │   │   ├── auth.validation.ts
+│   │   ├── logger.middleware.ts
 │   │   ├── player.validation.ts
 │   │   ├── scout.validation.ts
 │   │   └── uuid.validation.ts
@@ -110,6 +112,9 @@ Links scouts to the players they are tracking.
 | `player_id` | `UUID` | `REFERENCES players(player_id) ON DELETE CASCADE` | The player being scouted |
 | — | — | `PRIMARY KEY (scout_id, player_id)` | Prevents duplicate scout-player pairs |
 
+### `refresh_tokens` Table
+Stores hashed refresh tokens for persistent sessions. The API expects `session_id`, `user_id`, `token_hash`, `expires_at`, and nullable `revoked_at` columns. Refresh rotates tokens; logout revokes them. Only the hash should be stored in this table.
+
 ---
 
 ## 🚀 Getting Started
@@ -128,7 +133,6 @@ npm install
 ### 3. Environment Configuration
 Create a `.env` file in the root directory:
 ```env
-PORT=3000
 JWT_SECRET=your_super_secret_jwt_key_here_minimum_32_chars
 
 # Database Configuration
@@ -138,6 +142,7 @@ DB_USER=postgres
 DB_PASSWORD=your_password
 DB_NAME=talentmarket
 ```
+The server currently listens on port `3000`; it does not read a `PORT` variable. CORS is configured for `http://localhost:5173` in `src/config/security.ts`; change that origin for a different frontend.
 
 ### 4. Build & Run
 ```bash
@@ -151,6 +156,21 @@ npm start
 ---
 
 ## 📡 API Reference
+
+### Authentication, Sessions, and Rate Limits
+
+| Method | Path | Purpose | Access |
+| :--- | :--- | :--- | :--- |
+| `POST` | `/api/users/register` | Register a player or scout | Public; rate-limited |
+| `POST` | `/api/users/login` | Sign in and create a refresh-token session | Public; rate-limited |
+| `POST` | `/api/users/refresh` | Rotate refresh token and issue an access token | Valid `refreshToken` cookie |
+| `POST` | `/api/users/logout` | Revoke refresh token and clear cookie | Access token and valid `refreshToken` cookie |
+| `PUT` | `/api/users/update` | Update the authenticated user's name/email | Access token |
+| `DELETE` | `/api/users/:id` | Delete a user account | Admin access token |
+
+Login and registration limits are 100 and 50 requests per IP, respectively. Their windows are 15 and 30 minutes. Access tokens expire after 20 minutes; refresh tokens expire after 24 hours and rotate on refresh. Refresh is cookie-authenticated and does not require the expired access token.
+
+Send JSON request bodies with `Content-Type: application/json`. Use the access token returned by login as `Authorization: Bearer <access_token>`. Login sets an `HttpOnly` `refreshToken` cookie; keep Postman's cookie jar enabled for refresh and logout. The current login response also includes the refresh token in its JSON body.
 
 All protected routes require the authorization header:
 ```http
@@ -229,8 +249,9 @@ Authorization: Bearer <your_jwt_token>
   }
   ```
 
-#### 4. Delete User Account
+#### 6. Delete User Account
 * **Endpoint:** `DELETE /api/users/:id`
+* **Authorization:** Admin only. Registration only allows `player` and `scout`; provision an admin account through a trusted process.
 * **Access:** Protected (`Bearer Token`)
 
 ---
@@ -393,12 +414,21 @@ Authorization: Bearer <your_jwt_token>
 
 ---
 
-### 🔗 Scout-Player Endpoints (`/api/scouts/players`)
+#### 5. Delete Scout Profile
+* **Endpoint:** `DELETE /api/scouts/:scoutId`
+* **Access:** Authenticated scout or admin
+* **Important:** The route checks role but currently does not verify that a scout is deleting their own profile.
+
+---
+
+### 🔗 Scout-Player Endpoints (`/api/scout-players`)
+
+All routes require an access token. `POST` operations are intended for scouts and the service validates the account type. Although the `DELETE` route permits admins at the route layer, the service currently rejects them; deletion therefore works for scouts only. The read routes accept any authenticated user.
 
 > Manages the many-to-many scouting relationship between scouts and players. All endpoints require a valid Bearer token. Endpoints that write or read scout-specific data require the authenticated user to be a **scout**.
 
 #### 1. Scout a Player
-* **Endpoint:** `POST /api/scouts/players/:playerId`
+* **Endpoint:** `POST /api/scout-players/:playerId`
 * **Access:** Protected (`Bearer Token` — must be registered as `scout`)
 * **URL Params:** `playerId` *(UUID of the player to scout)*
 * **Request Body:** None — `scoutId` is read from the JWT, `playerId` from the URL
@@ -414,7 +444,7 @@ Authorization: Bearer <your_jwt_token>
   ```
 
 #### 2. Get All Players I Am Scouting
-* **Endpoint:** `GET /api/scouts/players`
+* **Endpoint:** `GET /api/scout-players`
 * **Access:** Protected (`Bearer Token` — scout's own list)
 * **Response (200):**
   ```json
@@ -426,7 +456,7 @@ Authorization: Bearer <your_jwt_token>
   ```
 
 #### 3. Get All Scouts for a Player
-* **Endpoint:** `GET /api/scouts/players/:playerId/scouts`
+* **Endpoint:** `GET /api/scout-players/:playerId/scouts`
 * **Access:** Protected (`Bearer Token`)
 * **URL Params:** `playerId` *(UUID of the player)*
 * **Response (200):**
@@ -439,7 +469,7 @@ Authorization: Bearer <your_jwt_token>
   ```
 
 #### 4. Remove a Player from Scout List
-* **Endpoint:** `DELETE /api/scouts/players/:playerId`
+* **Endpoint:** `DELETE /api/scout-players/:playerId`
 * **Access:** Protected (`Bearer Token` — must be registered as `scout`)
 * **URL Params:** `playerId` *(UUID of the player to remove)*
 * **Request Body:** None
@@ -472,6 +502,7 @@ Errors follow a uniform JSON schema handled centrally by `errorHandler` in `src/
 | `403 Forbidden`   | Insufficient permissions | Role mismatch or updating/deleting someone else's profile |
 | `404 Not Found`   | Resource not found | Profile or user ID does not exist |
 | `409 Conflict`    | Duplicate resource | Profile already created for user / player already scouted |
+| `429 Too Many Requests` | Rate limit exceeded | More than 100 login requests in 15 minutes or 50 registrations in 30 minutes per IP |
 | `500 Server Error`| Internal unhandled error | Database connection failure |
 
 ---

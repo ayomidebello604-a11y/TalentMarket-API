@@ -39,6 +39,9 @@ export const LoginUserService = async (email: string, password: string) => {
         throw new AppError("User not found",404);
     }
     const password_hash = user.password_hash;
+    if (!password_hash) {
+    throw new AppError("Please login using Google", 400);
+}
     const isValidPassword = await verifyPassword(password_hash, password);
     if (!isValidPassword) {
         throw new AppError("Invalid email or password",401);

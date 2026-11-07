@@ -5,13 +5,15 @@ import type {RegisterReturnType} from "../types/auth.type.ts";
 import { UUID } from "node:crypto";
 
 type RegisterUserInput = Omit<RegisterType, "password"> & {
-    password_hash: string;
+    password_hash?: string | null;
+    google_id?: string | null;
 };
 type FindUserByEmailReturnType = {
     user_id: string;
     name: string;
     email: string;
-    password_hash: string;
+    password_hash: string | null;
+    google_id: string | null;
     user_type: string;
     role: string;
 };
@@ -34,6 +36,13 @@ export interface token {
     session_id: string;
     token_hash: string;
 }
+
+type GoogleUserInput = {
+    name: string;
+    email: string;
+    google_id: string;
+    user_type: "player" | "scout";
+};
 
 export const registerUser = async (user: RegisterUserInput): Promise<RegisterReturnType> => {
     const {name, email, password_hash, userType} = user;
@@ -159,4 +168,28 @@ export const rotateRefreshToken = async (
     } finally {
         client.release();
     }
+};
+
+
+export const findUserByGoogleId = async (googleId: string) => {
+    const text = "SELECT * FROM users WHERE google_id = $1";
+    const result = await pool.query(text, [googleId]);
+
+    return result.rows[0] ?? null;
+};
+
+export const createGoogleUser = async (user: GoogleUserInput) => {
+    const { name, email, google_id, user_type } = user;
+
+    const text = `
+        INSERT INTO users (name, email, google_id, user_type)
+        VALUES ($1, $2, $3, $4)
+        RETURNING user_id, name, email, google_id, user_type, role
+    `;
+
+    const values = [name, email, google_id, user_type];
+
+    const result = await pool.query(text, values);
+
+    return result.rows[0] ?? null;
 };

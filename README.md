@@ -13,126 +13,129 @@
 
 ## 📖 Overview
 
-**TalentMarket** is a backend service designed to connect emerging football players with scouts and agents. It features a clean 3-tier / layered architecture, secure authentication using **Argon2** and **Jose JWT**, strict input validation via **Zod**, and PostgreSQL connection pooling.
+**TalentMarket** is a backend service designed to connect emerging football players with scouts and agents. It features a clean layered architecture, secure authentication using **Argon2**, **Jose JWT**, and **Google OAuth 2.0**, strict input validation via **Zod**, and PostgreSQL connection pooling.
+
+Users can register or sign in with email and password, or authenticate with Google. The platform supports player and scout profiles, scout-player relationships, and role-based access control.
 
 ---
 
 ## 🏗️ Architecture & Project Structure
 
-The project follows the standard **Controller-Service-Repository** pattern to ensure separation of concerns, testability, and maintainability:
+The project follows the **Controller-Service-Repository** pattern to ensure separation of concerns, testability, and maintainability:
 
 ```
-TalentMarket/
+TalentMarket-API/
 ├── src/
-│   ├── config/             # Database connection and security configuration
+│   ├── config/                 # Database, security, and OAuth configuration
 │   │   ├── database.ts
-│   │   └── security.ts     # CORS and authentication rate limits
-│   ├── controllers/        # Request handling and HTTP response orchestration
+│   │   ├── google-oauth.ts
+│   │   └── security.ts
+│   ├── controllers/            # Request handling and HTTP response orchestration
 │   │   ├── auth.controller.ts
 │   │   ├── player.controller.ts
 │   │   ├── scout.controller.ts
 │   │   └── scout-player.controller.ts
-│   ├── errors/             # Custom application error classes
+│   ├── errors/                 # Custom application error classes
 │   │   └── AppError.ts
-│   ├── middlewares/        # Authentication & request validation middlewares
-│   │   ├── auth.validation.ts
-│   │   ├── logger.middleware.ts
-│   │   ├── player.validation.ts
-│   │   ├── scout.validation.ts
-│   │   └── uuid.validation.ts
-│   ├── repositories/       # Direct SQL queries and DB interaction
-│   │   ├── auth.repository.ts
-│   │   ├── player.repository.ts
-│   │   ├── scout.repository.ts
-│   │   └── scout-player.repository.ts
-│   ├── routes/             # Express route definitions
-│   │   ├── auth.route.ts
-│   │   ├── player.route.ts
-│   │   ├── scout.route.ts
-│   │   └── scout-player.route.ts
-│   ├── schemas/            # Zod validation schemas and inferred types
-│   │   ├── auth.schema.ts
-│   │   └── user.schema.ts
-│   ├── services/           # Business logic and cross-entity operations
+│   ├── middlewares/            # Authentication, validation, and request logging
+│   ├── repositories/           # Parameterized SQL queries and database interaction
+│   ├── routes/                 # Express route definitions
+│   ├── schemas/                # Zod validation schemas and inferred types
+│   ├── services/               # Business logic and cross-entity operations
 │   │   ├── auth.service.ts
+│   │   ├── google-oauth.service.ts
 │   │   ├── player.service.ts
 │   │   ├── scout.service.ts
 │   │   └── scout-player.service.ts
-│   ├── types/              # Ambient TypeScript declarations and types
-│   │   ├── auth.type.ts
-│   │   └── express.d.ts
-│   ├── utils/              # Helper utilities (JWT generation & password hashing)
+│   ├── types/                  # Ambient TypeScript declarations and types
+│   ├── utils/                  # JWT generation and password hashing
 │   │   ├── jwt.ts
 │   │   └── password.ts
-│   ├── app.ts              # Express application setup, middlewares, and error handlers
-│   └── index.ts            # Server listener entry point
+│   ├── app.ts                  # Express application setup and error handlers
+│   └── index.ts                # Server listener entry point
 ├── package.json
 ├── tsconfig.json
 └── README.md
 ```
 
 ### Flow of a Request
-$$\text{Client} \longrightarrow \text{Routes} \longrightarrow \text{Middlewares (Auth + Zod + UUID)} \longrightarrow \text{Controller} \longrightarrow \text{Service} \longrightarrow \text{Repository} \longrightarrow \text{PostgreSQL}$$
+
+`Client → Routes → Middlewares (Authentication + Validation) → Controller → Service → Repository → PostgreSQL`
 
 ---
 
 ## 🗄️ Database Design
 
+The API currently uses PostgreSQL through the `pg` package and parameterized SQL queries.
+
 ### `users` Table
-Stores authentication credentials and user types.
-| Column | Type | Constraints | Description |
-| :--- | :--- | :--- | :--- |
-| `user_id` | `UUID` | `PRIMARY KEY`, Default `gen_random_uuid()` | Unique user identifier |
-| `name` | `VARCHAR` | `NOT NULL` | Full name of the user |
-| `email` | `VARCHAR` | `UNIQUE`, `NOT NULL` | User email address |
-| `password_hash`| `TEXT` | `NOT NULL` | Argon2 hashed password |
-| `user_type` | `VARCHAR` | `NOT NULL` | Account type: `"player"`, `"scout"`, `"admin"` |
+
+Stores account details and authentication information.
+
+| Column | Purpose |
+| :--- | :--- |
+| `user_id` | Unique user identifier (UUID) |
+| `name` | Full name |
+| `email` | User email address |
+| `password_hash` | Argon2 password hash; Google-created accounts do not use password authentication |
+| `google_id` | Google account identifier used by Google OAuth |
+| `user_type` | Account type: `player` or `scout` |
+| `role` | Authorization role used when generating JWTs |
+
+The repository queries expect the `google_id` and `role` fields to be available. The password hash may be absent for accounts created through Google OAuth.
 
 ### `players` Table
-Stores extended scouting profile metrics for player accounts.
-| Column | Type | Constraints | Description |
-| :--- | :--- | :--- | :--- |
-| `player_id` | `UUID` | `PRIMARY KEY`, `REFERENCES users(user_id) ON DELETE CASCADE` | Matches owner's `user_id` |
-| `position` | `VARCHAR` | `NOT NULL` | Position: `"gk"`, `"def"`, `"mid"`, `"fwd"` |
-| `ratings` | `INTEGER` | `CHECK (ratings BETWEEN 49 AND 100)` | Scouting rating (49 – 100) |
-| `contact_details` | `VARCHAR` | `NOT NULL` | Phone number or contact handle |
+
+Stores extended scouting profile details for player accounts. The `player_id` identifies the corresponding user account.
+
+| Column | Purpose |
+| :--- | :--- |
+| `player_id` | Player profile identifier linked to the user's ID |
+| `position` | `gk`, `def`, `mid`, or `fwd` |
+| `ratings` | Scouting rating from 49 to 100 |
+| `contact_details` | Phone number or contact handle |
 
 ### `scouts` Table
-Stores profile details for scout accounts.
-| Column | Type | Constraints | Description |
-| :--- | :--- | :--- | :--- |
-| `scout_id` | `UUID` | `PRIMARY KEY`, `REFERENCES users(user_id) ON DELETE CASCADE` | Matches owner's `user_id` |
-| `contact_details` | `VARCHAR` | `NOT NULL` | Phone number or organization contact |
 
-### `scout_players` Table *(Many-to-Many Join Table)*
-Links scouts to the players they are tracking.
-| Column | Type | Constraints | Description |
-| :--- | :--- | :--- | :--- |
-| `scout_id` | `UUID` | `REFERENCES scouts(scout_id) ON DELETE CASCADE` | The scout doing the scouting |
-| `player_id` | `UUID` | `REFERENCES players(player_id) ON DELETE CASCADE` | The player being scouted |
-| — | — | `PRIMARY KEY (scout_id, player_id)` | Prevents duplicate scout-player pairs |
+Stores profile details for scout accounts.
+
+| Column | Purpose |
+| :--- | :--- |
+| `scout_id` | Scout profile identifier linked to the user's ID |
+| `contact_details` | Phone number or organization contact |
+
+### `scout_players` Table
+
+Many-to-many join table linking scouts to the players they are tracking. The repository uses the `scout_id` and `player_id` pair to identify each relationship and prevent duplicate entries.
 
 ### `refresh_tokens` Table
-Stores hashed refresh tokens for persistent sessions. The API expects `session_id`, `user_id`, `token_hash`, `expires_at`, and nullable `revoked_at` columns. Refresh rotates tokens; logout revokes them. Only the hash should be stored in this table.
+
+Stores hashed refresh tokens for persistent sessions. The API uses `session_id`, `user_id`, `token_hash`, `expires_at`, and `revoked_at`. Raw refresh tokens are not stored in this table. Refresh rotates the token, while logout revokes it.
 
 ---
 
 ## 🚀 Getting Started
 
 ### 1. Prerequisites
+
 * **Node.js** (v20+ recommended)
 * **PostgreSQL** instance running locally or hosted
+* **Google Cloud project** with OAuth 2.0 credentials (only required for Google sign-in)
 
 ### 2. Installation
+
 ```bash
-git clone <repository-url>
-cd TalentMarket
+git clone https://github.com/ayomidebello604-a11y/TalentMarket-API.git
+cd TalentMarket-API
 npm install
 ```
 
 ### 3. Environment Configuration
+
 Create a `.env` file in the root directory:
+
 ```env
+# JWT
 JWT_SECRET=your_super_secret_jwt_key_here_minimum_32_chars
 
 # Database Configuration
@@ -141,10 +144,17 @@ DB_PORT=5432
 DB_USER=postgres
 DB_PASSWORD=your_password
 DB_NAME=talentmarket
+
+# Google OAuth 2.0
+GOOGLE_CLIENT_ID=your_google_client_id
+GOOGLE_CLIENT_SECRET=your_google_client_secret
+GOOGLE_CALLBACK_URL=http://localhost:3000/api/users/google/callback
 ```
-The server currently listens on port `3000`; it does not read a `PORT` variable. CORS is configured for `http://localhost:5173` in `src/config/security.ts`; change that origin for a different frontend.
+
+Configure the same callback URL in your Google Cloud OAuth client. The server currently listens on port `3000`; it does not read a `PORT` environment variable. CORS is configured for `http://localhost:5173` in `src/config/security.ts`; update that origin if your frontend uses a different URL.
 
 ### 4. Build & Run
+
 ```bash
 # Compile TypeScript
 npm run build
@@ -159,329 +169,235 @@ npm start
 
 ### Authentication, Sessions, and Rate Limits
 
+Base path: `/api/users`
+
 | Method | Path | Purpose | Access |
 | :--- | :--- | :--- | :--- |
-| `POST` | `/api/users/register` | Register a player or scout | Public; rate-limited |
-| `POST` | `/api/users/login` | Sign in and create a refresh-token session | Public; rate-limited |
-| `POST` | `/api/users/refresh` | Rotate refresh token and issue an access token | Valid `refreshToken` cookie |
-| `POST` | `/api/users/logout` | Revoke refresh token and clear cookie | Access token and valid `refreshToken` cookie |
-| `PUT` | `/api/users/update` | Update the authenticated user's name/email | Access token |
-| `DELETE` | `/api/users/:id` | Delete a user account | Admin access token |
+| `POST` | `/register` | Register a player or scout with email and password | Public; rate-limited |
+| `POST` | `/login` | Sign in with email and password and create a session | Public; rate-limited |
+| `GET` | `/google?user_type=player` | Start Google OAuth as a player | Public |
+| `GET` | `/google?user_type=scout` | Start Google OAuth as a scout | Public |
+| `GET` | `/google/callback` | Handle Google's OAuth callback | OAuth state cookie |
+| `POST` | `/refresh` | Rotate refresh token and issue a new access token | Valid `refreshToken` cookie |
+| `POST` | `/logout` | Revoke the refresh-token session and clear its cookie | Access token and valid refresh-token cookie |
+| `PUT` | `/update` | Update the authenticated user's name and email | Access token |
+| `DELETE` | `/:id` | Delete a user account | Admin access token |
 
-Login and registration limits are 100 and 50 requests per IP, respectively. Their windows are 15 and 30 minutes. Access tokens expire after 20 minutes; refresh tokens expire after 24 hours and rotate on refresh. Refresh is cookie-authenticated and does not require the expired access token.
+Login and registration limits are 100 and 50 requests per IP, respectively. Their windows are 15 and 30 minutes. Access tokens expire after 20 minutes; refresh tokens expire after 24 hours and rotate on refresh.
 
-Send JSON request bodies with `Content-Type: application/json`. Use the access token returned by login as `Authorization: Bearer <access_token>`. Login sets an `HttpOnly` `refreshToken` cookie; keep Postman's cookie jar enabled for refresh and logout. The current login response also includes the refresh token in its JSON body.
+Send JSON request bodies with `Content-Type: application/json`. Use the access token returned by login as `Authorization: Bearer <access_token>`. Password login and Google OAuth set an `HttpOnly` `refreshToken` cookie. Keep your API client's cookie jar enabled for refresh and logout. Password login also includes the refresh token in its JSON response; the Google callback does not return the raw refresh token in its JSON response.
 
-All protected routes require the authorization header:
+All protected routes require:
+
 ```http
-Authorization: Bearer <your_jwt_token>
+Authorization: Bearer <your_access_token>
 ```
 
----
+#### 1. Register a User
 
-### 🔐 Authentication Endpoints (`/api/users`)
-
-#### 1. Register a User (Player or Scout)
 * **Endpoint:** `POST /api/users/register`
 * **Access:** Public
-* **Request Body (Player):**
-  ```json
-  {
-    "name": "Victor Osimhen",
-    "email": "victor@example.com",
-    "password": "Password123!",
-    "userType": "player"
-  }
-  ```
-* **Request Body (Scout):**
-  ```json
-  {
-    "name": "Mikel Arteta",
-    "email": "mikel@arsenal.com",
-    "password": "Password123!",
-    "userType": "scout"
-  }
-  ```
-* **Success Response (201):** *(Password hash is stripped from response)*
-  ```json
-  {
-    "message": "User registered successfully",
-    "newUser": {
-      "user_id": "c1f7a0b2-3c4d-4e5f-a6b7-c8d9e0f1a2b3",
-      "name": "Victor Osimhen",
-      "email": "victor@example.com",
-      "user_type": "player"
-    }
-  }
-  ```
+* **Request Body:**
+
+```json
+{
+  "name": "Victor Osimhen",
+  "email": "victor@example.com",
+  "password": "Password123!",
+  "userType": "player"
+}
+```
+
+Use `"scout"` as `userType` when registering a scout. Registration accepts `player` and `scout`; it does not expose public admin registration.
 
 #### 2. Login User
+
 * **Endpoint:** `POST /api/users/login`
 * **Access:** Public
 * **Request Body:**
-  ```json
-  {
-    "email": "victor@example.com",
-    "password": "Password123!"
-  }
-  ```
-* **Success Response (200):** *(Returns JWT token and user info without password hash)*
-  ```json
-  {
-    "message": "User logged in successfully",
-    "user": {
-      "user_id": "c1f7a0b2-3c4d-4e5f-a6b7-c8d9e0f1a2b3",
-      "email": "victor@example.com",
-      "role": "player"
-    },
-    "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-  }
-  ```
 
-#### 3. Update User Info
+```json
+{
+  "email": "victor@example.com",
+  "password": "Password123!"
+}
+```
+
+A successful login returns the user details and an access token, and sets the refresh-token cookie.
+
+#### 3. Google OAuth
+
+* **Start Endpoint:** `GET /api/users/google?user_type=player` or `GET /api/users/google?user_type=scout`
+* **Callback Endpoint:** `GET /api/users/google/callback`
+* **Access:** Public
+
+The flow redirects the user to Google for authentication. The API generates a random OAuth state value and stores it with the selected account type in short-lived, HTTP-only cookies. On callback, it checks the returned state, exchanges the authorization code, verifies the Google ID token, and checks that Google's email is verified.
+
+For a new Google account, the selected account type is used to create the user. If the email already belongs to an account that is not linked to that Google ID, the API returns a conflict instead of automatically linking the accounts. An existing Google-linked account can sign in through the same flow.
+
+A successful callback returns the user details, access token, session information, and expiry information, and sets the refresh-token cookie.
+
+#### 4. Refresh Access Token
+
+* **Endpoint:** `POST /api/users/refresh`
+* **Access:** Valid refresh-token cookie
+* **Request Body:** None
+
+The refresh token is read from the `refreshToken` cookie. A successful request rotates the refresh token and returns a new access token.
+
+#### 5. Logout
+
+* **Endpoint:** `POST /api/users/logout`
+* **Access:** Protected; requires an access token and refresh-token cookie
+
+The endpoint revokes the refresh-token session and clears the cookie.
+
+#### 6. Update User Info
+
 * **Endpoint:** `PUT /api/users/update`
 * **Access:** Protected (`Bearer Token`)
 * **Request Body:**
-  ```json
-  {
-    "name": "Victor James Osimhen",
-    "email": "victor.osimhen@example.com"
-  }
-  ```
 
-#### 6. Delete User Account
+```json
+{
+  "name": "Victor James Osimhen",
+  "email": "victor.osimhen@example.com"
+}
+```
+
+#### 7. Delete User Account
+
 * **Endpoint:** `DELETE /api/users/:id`
-* **Authorization:** Admin only. Registration only allows `player` and `scout`; provision an admin account through a trusted process.
-* **Access:** Protected (`Bearer Token`)
+* **Access:** Admin only
 
 ---
 
 ### 🏃‍♂️ Players Endpoints (`/api/players`)
 
-#### 1. Get All Players
-* **Endpoint:** `GET /api/players`
-* **Access:** Protected (`Bearer Token`)
-* **Response (200):** *(Includes player profile details with `name` and `email` from users)*
-  ```json
-  [
-    {
-      "player_id": "c1f7a0b2-3c4d-4e5f-a6b7-c8d9e0f1a2b3",
-      "position": "fwd",
-      "ratings": 88,
-      "contact_details": "+2348012345678",
-      "name": "Victor Osimhen",
-      "email": "victor@example.com"
-    }
-  ]
-  ```
+All player endpoints require an access token.
 
-#### 2. Create Player Profile
-* **Endpoint:** `POST /api/players`
-* **Access:** Protected (`Bearer Token` — must be registered as `player`)
+| Method | Endpoint | Purpose |
+| :--- | :--- | :--- |
+| `GET` | `/` | Get all player profiles |
+| `POST` | `/` | Create the authenticated user's player profile |
+| `GET` | `/name?name=Victor` | Search players by name |
+| `GET` | `/position?position=fwd` | Filter players by position |
+| `PUT` | `/` | Update the authenticated user's player profile |
+| `DELETE` | `/` | Delete a player profile |
+
+#### Create Player Profile
+
+* **Access:** Authenticated player or admin
 * **Validation Rules:**
-  * `position`: `"gk" | "def" | "mid" | "fwd"`
-  * `ratings`: Integer between `49` and `100`
-  * `contactDetails`: String between `11` and `30` characters
-* **Request Body:**
-  ```json
-  {
-    "position": "fwd",
-    "ratings": 88,
-    "contactDetails": "+2348012345678"
-  }
-  ```
-* **Response (201):**
-  ```json
-  {
-    "player_id": "c1f7a0b2-3c4d-4e5f-a6b7-c8d9e0f1a2b3",
-    "position": "fwd",
-    "ratings": 88,
-    "contact_details": "+2348012345678"
-  }
-  ```
+  * `position`: `gk`, `def`, `mid`, or `fwd`
+  * `ratings`: Integer between 49 and 100
+  * `contactDetails`: String between 11 and 30 characters
 
-#### 3. Search Player by Name
-* **Endpoint:** `GET /api/players/name?name=Victor`
-* **Access:** Protected (`Bearer Token`)
-* **Query Parameters:** `name` *(string, required — matches partial names case-insensitively)*
+```json
+{
+  "position": "fwd",
+  "ratings": 88,
+  "contactDetails": "+2348012345678"
+}
+```
 
-#### 4. Filter Players by Position
-* **Endpoint:** `GET /api/players/position?position=fwd`
-* **Access:** Protected (`Bearer Token`)
-* **Query Parameters:** `position` *(string, required: `gk`, `def`, `mid`, `fwd`)*
+The profile ID is taken from the authenticated user's token.
 
-#### 5. Update Player Profile
-* **Endpoint:** `PUT /api/players`
-* **Access:** Protected (`Bearer Token`)
-* **Request Body (all fields optional):**
-  ```json
-  {
-    "ratings": 91,
-    "contactDetails": "+2348099887766"
-  }
-  ```
+#### Update Player Profile
 
-#### 6. Delete Player Profile
-* **Endpoint:** `DELETE /api/players`
-* **Access:** Protected (`Bearer Token`)
-* **Permissions & Ownership:**
-  * **Regular Player:** Automatically deletes the user's own profile based on their token ID.
-  * **Admin:** Can delete any profile by providing `?playerId=<target_uuid>`.
+* **Access:** Authenticated user
+* **Request Body:** All profile fields are optional.
+
+```json
+{
+  "ratings": 91,
+  "contactDetails": "+2348099887766"
+}
+```
+
+#### Delete Player Profile
+
+* **Access:** Player or admin
+* **Ownership:** A player deletes their own profile. An admin can provide the target `playerId` as a query parameter.
+
+Example: `DELETE /api/players?playerId=<player_uuid>`
 
 ---
 
 ### 🕵️‍♂️ Scouts Endpoints (`/api/scouts`)
 
-#### 1. Get All Scouts
-* **Endpoint:** `GET /api/scouts`
-* **Access:** Protected (`Bearer Token`)
-* **Response (200):** *(Includes scout details with `name` and `email` from users)*
-  ```json
-  {
-    "status": "success",
-    "scouts": [
-      {
-        "scout_id": "e4b2a1c0-1d2e-3f4a-5b6c-7d8e9f0a1b2c",
-        "contact_details": "+447123456789",
-        "name": "Mikel Arteta",
-        "email": "mikel@arsenal.com"
-      }
-    ]
-  }
-  ```
+All scout endpoints require an access token.
 
-#### 2. Create Scout Profile
-* **Endpoint:** `POST /api/scouts`
-* **Access:** Protected (`Bearer Token` — must be registered as `scout`)
-* **Validation Rules (Strict):**
-  * `contactDetails`: String between `11` and `30` characters
-  * *Extra unrecognized keys are strictly rejected*
-* **Request Body:**
-  ```json
-  {
-    "contactDetails": "+447123456789"
-  }
-  ```
-* **Response (201):**
-  ```json
-  {
-    "status": "success",
-    "scout": {
-      "scout_id": "e4b2a1c0-1d2e-3f4a-5b6c-7d8e9f0a1b2c",
-      "contact_details": "+447123456789"
-    }
-  }
-  ```
+| Method | Endpoint | Purpose |
+| :--- | :--- | :--- |
+| `GET` | `/` | Get all scout profiles |
+| `POST` | `/` | Create the authenticated user's scout profile |
+| `GET` | `/:scoutId` | Get a scout by ID |
+| `PUT` | `/:scoutId` | Update scout contact details |
+| `DELETE` | `/:scoutId` | Delete a scout profile |
 
-#### 3. Get Scout by ID
-* **Endpoint:** `GET /api/scouts/:scoutId`
-* **Access:** Protected (`Bearer Token`)
-* **Response (200):**
-  ```json
-  {
-    "status": "success",
-    "scout": {
-      "user_scout": {
-        "user_id": "e4b2a1c0-1d2e-3f4a-5b6c-7d8e9f0a1b2c",
-        "name": "Mikel Arteta",
-        "email": "mikel@arsenal.com",
-        "user_type": "scout"
-      },
-      "scoutDetails": "+447123456789"
-    }
-  }
-  ```
+#### Create Scout Profile
 
-#### 4. Update Scout Contact Details
-* **Endpoint:** `PUT /api/scouts/:scoutId`
-* **Access:** Protected (`Bearer Token` — only the scout themselves or an admin can update)
-* **Request Body:**
-  ```json
-  {
-    "contactDetails": "+447998877665"
-  }
-  ```
-* **Response (200):**
-  ```json
-  {
-    "status": "success",
-    "scout": {
-      "scout_id": "e4b2a1c0-1d2e-3f4a-5b6c-7d8e9f0a1b2c",
-      "contact_details": "+447998877665"
-    }
-  }
-  ```
-
----
-
-#### 5. Delete Scout Profile
-* **Endpoint:** `DELETE /api/scouts/:scoutId`
 * **Access:** Authenticated scout or admin
-* **Important:** The route checks role but currently does not verify that a scout is deleting their own profile.
+* **Validation:** `contactDetails` must be a string between 11 and 30 characters. Extra fields are rejected.
+
+```json
+{
+  "contactDetails": "+447123456789"
+}
+```
+
+#### Update Scout Contact Details
+
+* **Endpoint:** `PUT /api/scouts/:scoutId`
+* **Access:** The scout themselves or an admin
+* **Request Body:**
+
+```json
+{
+  "contactDetails": "+447998877665"
+}
+```
+
+#### Delete Scout Profile
+
+* **Endpoint:** `DELETE /api/scouts/:scoutId`
+* **Access:** Route allows a scout or admin access token.
 
 ---
 
 ### 🔗 Scout-Player Endpoints (`/api/scout-players`)
 
-All routes require an access token. `POST` operations are intended for scouts and the service validates the account type. Although the `DELETE` route permits admins at the route layer, the service currently rejects them; deletion therefore works for scouts only. The read routes accept any authenticated user.
+All routes require a valid access token. These endpoints manage the many-to-many relationship between scouts and players.
 
-> Manages the many-to-many scouting relationship between scouts and players. All endpoints require a valid Bearer token. Endpoints that write or read scout-specific data require the authenticated user to be a **scout**.
+| Method | Endpoint | Purpose |
+| :--- | :--- | :--- |
+| `POST` | `/:playerId` | Add a player to the authenticated scout's list |
+| `GET` | `/` | Get the authenticated user's scouting list |
+| `GET` | `/:playerId/scouts` | Get scouts associated with a player |
+| `DELETE` | `/:playerId` | Remove a player from the authenticated scout's list |
 
 #### 1. Scout a Player
+
 * **Endpoint:** `POST /api/scout-players/:playerId`
-* **Access:** Protected (`Bearer Token` — must be registered as `scout`)
-* **URL Params:** `playerId` *(UUID of the player to scout)*
-* **Request Body:** None — `scoutId` is read from the JWT, `playerId` from the URL
-* **Response (201):**
-  ```json
-  {
-    "message": "Player scouted successfully",
-    "scoutingDetails": {
-      "scout_id": "e4b2a1c0-1d2e-3f4a-5b6c-7d8e9f0a1b2c",
-      "player_id": "c1f7a0b2-3c4d-4e5f-a6b7-c8d9e0f1a2b3"
-    }
-  }
-  ```
+* **Access:** Authenticated scout account
+* **Request Body:** None. The scout ID comes from the access token and the player ID comes from the URL.
 
-#### 2. Get All Players I Am Scouting
-* **Endpoint:** `GET /api/scout-players`
-* **Access:** Protected (`Bearer Token` — scout's own list)
-* **Response (200):**
-  ```json
-  {
-    "players": [
-      { "player_id": "c1f7a0b2-3c4d-4e5f-a6b7-c8d9e0f1a2b3" }
-    ]
-  }
-  ```
+#### 2. Get Scouted Players
 
-#### 3. Get All Scouts for a Player
+* **Endpoint:** `GET /api/scout-players/`
+* **Access:** Authenticated user
+* **Response:** Returns the players associated with the authenticated user's ID.
+
+#### 3. Get Scouts for a Player
+
 * **Endpoint:** `GET /api/scout-players/:playerId/scouts`
-* **Access:** Protected (`Bearer Token`)
-* **URL Params:** `playerId` *(UUID of the player)*
-* **Response (200):**
-  ```json
-  {
-    "scouts": [
-      { "scout_id": "e4b2a1c0-1d2e-3f4a-5b6c-7d8e9f0a1b2c" }
-    ]
-  }
-  ```
+* **Access:** Authenticated user
 
-#### 4. Remove a Player from Scout List
+#### 4. Remove a Player from a Scout's List
+
 * **Endpoint:** `DELETE /api/scout-players/:playerId`
-* **Access:** Protected (`Bearer Token` — must be registered as `scout`)
-* **URL Params:** `playerId` *(UUID of the player to remove)*
-* **Request Body:** None
-* **Response (200):**
-  ```json
-  {
-    "message": "Player removed from scout's list",
-    "result": {
-      "player_id": "c1f7a0b2-3c4d-4e5f-a6b7-c8d9e0f1a2b3"
-    }
-  }
-  ```
+* **Access:** The route accepts scout or admin roles. The service currently verifies that the authenticated account is a scout before removing the relationship.
 
 ---
 
@@ -498,12 +414,12 @@ Errors follow a uniform JSON schema handled centrally by `errorHandler` in `src/
 | HTTP Status | Meaning | Scenario |
 | :--- | :--- | :--- |
 | `400 Bad Request` | Validation failure / malformed JSON | Invalid schema inputs or extra unexpected keys |
-| `401 Unauthorized`| Missing / invalid JWT token | Token missing or expired |
-| `403 Forbidden`   | Insufficient permissions | Role mismatch or updating/deleting someone else's profile |
-| `404 Not Found`   | Resource not found | Profile or user ID does not exist |
-| `409 Conflict`    | Duplicate resource | Profile already created for user / player already scouted |
-| `429 Too Many Requests` | Rate limit exceeded | More than 100 login requests in 15 minutes or 50 registrations in 30 minutes per IP |
-| `500 Server Error`| Internal unhandled error | Database connection failure |
+| `401 Unauthorized` | Missing or invalid authentication | Missing, invalid, or expired access/refresh token |
+| `403 Forbidden` | Insufficient permissions | Role mismatch or attempting an operation without permission |
+| `404 Not Found` | Resource not found | Profile or user ID does not exist |
+| `409 Conflict` | Duplicate resource or account conflict | Profile already exists, player already scouted, or email already belongs to a non-Google-linked account |
+| `429 Too Many Requests` | Rate limit exceeded | Login or registration request limit exceeded |
+| `500 Server Error` | Internal unhandled error | Unexpected server or database error |
 
 ---
 

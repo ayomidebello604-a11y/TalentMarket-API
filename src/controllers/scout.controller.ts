@@ -6,7 +6,7 @@ import {
     updateScoutContactdetailsService,
     deleteScoutService
 } from "../services/scout.service.ts";
-import { fetchScoutById } from "../repositories/scout.repository.ts";
+import { fetchScoutById } from "../repositories/scout.prisma.repository.ts";
 
 export const getAllScouts = async (req: Request, res: Response, next: NextFunction) => {
     try {

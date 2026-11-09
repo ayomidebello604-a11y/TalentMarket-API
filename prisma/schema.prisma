@@ -1,8 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Get a free hosted Postgres database in seconds: `npx create-db`
-
 generator client {
   provider = "prisma-client"
   output   = "../src/generated/prisma"
@@ -10,4 +5,56 @@ generator client {
 
 datasource db {
   provider = "postgresql"
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model players {
+  player_id       String          @id @db.Uuid
+  position        String          @db.VarChar(3)
+  ratings         Decimal         @db.Decimal
+  contact_details String
+  users           users           @relation(fields: [player_id], references: [user_id], onDelete: Cascade, onUpdate: NoAction)
+  scout_players   scout_players[]
+}
+
+model refresh_tokens {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  session_id String    @db.Uuid
+  user_id    String    @db.Uuid
+  token_hash String    @unique @db.VarChar(255)
+  created_at DateTime? @default(now()) @db.Timestamptz(6)
+  revoked_at DateTime? @db.Timestamptz(6)
+  expires_at DateTime  @db.Timestamptz(6)
+  users      users     @relation(fields: [user_id], references: [user_id], onDelete: Cascade, onUpdate: NoAction)
+}
+
+model scout_players {
+  scout_id  String  @db.Uuid
+  player_id String  @db.Uuid
+  players   players @relation(fields: [player_id], references: [player_id], onDelete: Cascade, onUpdate: NoAction)
+  scouts    scouts  @relation(fields: [scout_id], references: [scout_id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([scout_id, player_id])
+}
+
+model scouts {
+  scout_id        String          @id @db.Uuid
+  contact_details String
+  scout_players   scout_players[]
+  users           users           @relation(fields: [scout_id], references: [user_id], onDelete: Cascade, onUpdate: NoAction)
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model users {
+  user_id        String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name           String           @db.VarChar(50)
+  email          String           @unique @db.VarChar(30)
+  password_hash  String?
+  created_at     DateTime         @default(now()) @db.Timestamptz(6)
+  role           String           @default("user") @db.VarChar(5)
+  user_type      String?          @db.VarChar(6)
+  google_id      String?          @unique @db.VarChar(255)
+  players        players?
+  refresh_tokens refresh_tokens[]
+  scouts         scouts?
 }

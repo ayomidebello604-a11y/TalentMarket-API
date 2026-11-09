@@ -6,7 +6,7 @@ import {
     fetchScoutById, 
     updateScout ,
     removeScout
-} from "../repositories/scout.repository.ts";
+} from "../repositories/scout.prisma.repository.ts";
 
 export const getAllscoutsService = async () => {
     const result = await fetchAllScouts();

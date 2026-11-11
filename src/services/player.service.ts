@@ -7,14 +7,27 @@ import {
     updatePlayerProfile, 
     deletePlayerProfile 
 } from "../repositories/player.repository.ts";
+import { Redis } from "../config/redis.ts";
 import type { playerInput, updatePlayerInput } from "../schemas/user.schema.ts";
 
+
+
+
 export const getAllPlayersService = async () => {
-    return await getAllProfile();
+    const CACHE_KEY = "talentmarket:players:all"
+    const CACHED_PLAYERS = await Redis.get(CACHE_KEY)
+    if(CACHED_PLAYERS) {
+      return JSON.parse(CACHED_PLAYERS)
+    }
+    const allPlayers =  await getAllProfile();
+       await Redis.setEx(CACHE_KEY,3600,JSON.stringify(allPlayers))
+    return allPlayers
 };
 
 export const createPlayerProfileService = async (playerId: string, input: playerInput) => {
-    return await createPlayerProfile(playerId, input);
+    const player = await createPlayerProfile(playerId, input);
+    if(player)  await Redis.del("talentmarket:players:all")
+        return player
 };
 
 export const getPlayerByIdService = async (playerId: string) => {
@@ -30,9 +43,13 @@ export const getPlayersByPositionService = async (position: string) => {
 };
 
 export const updatePlayerProfileService = async (input: updatePlayerInput, playerId: string) => {
-    return await updatePlayerProfile(input, playerId);
+    const updatedPlayer = await updatePlayerProfile(input, playerId);
+    if(updatedPlayer) await Redis.del("talentmarket:players:all")
+        return updatedPlayer
 };
 
 export const deletePlayerProfileService = async (role: string, playerId: string, userId?: string) => {
-    return await deletePlayerProfile(role, playerId, userId);
+  const deletedPlayer = await deletePlayerProfile(role, playerId, userId);
+  if(deletedPlayer) await Redis.del("talentmarket:players:all")
+    return deletedPlayer
 };

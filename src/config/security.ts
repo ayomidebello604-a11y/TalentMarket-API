@@ -1,4 +1,6 @@
 import cors from "cors";
+import RedisStore from "rate-limit-redis";
+import { Redis } from "./redis.ts";
 import rateLimit from "express-rate-limit";
 
 export const corsConfig = cors({
@@ -12,7 +14,12 @@ export const Loginlimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
     limit: 100,
     standardHeaders: "draft-8",
-    legacyHeaders: false,
+    passOnStoreError: false,
+   store: new RedisStore({
+    sendCommand: (...args: string[]) => Redis.sendCommand(args),
+    prefix: "rl:login:",
+  }),
+  legacyHeaders : false,
     message: {
         status: 429,
         message: "Too many login attempts from this user, please try again after 15 minutes"
@@ -23,9 +30,13 @@ export const Registerlimiter = rateLimit({
     windowMs: 30 * 60 * 1000,
     limit: 50,  
     standardHeaders: "draft-8",
+    store: new RedisStore({
+    sendCommand: (...args: string[]) => Redis.sendCommand(args),
+    prefix: "rl:register:",
+  }),
     legacyHeaders: false,
     message: {  
         status: 429,
-        message: "Too many registration attempts from this user, please try again after 60 minutes"
+        message: "Too many registration attempts from this user, please try again after 30 minutes"
     }
 });

@@ -5,7 +5,6 @@ const client = createClient({
     disableOfflineQueue: true,
     socket: {
         connectTimeout: 5000,
-        socketTimeout: 3000
     }
 });
 

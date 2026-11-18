@@ -1,4 +1,4 @@
-import {SignJWT, jwtVerify} from "jose";
+import {SignJWT} from "jose";
 
 
 const secret = new TextEncoder().encode(process.env.JWT_SECRET);

@@ -5,6 +5,9 @@ import { generateToken } from "../utils/jwt.ts";
 import {randomUUID,createHash,randomBytes} from "node:crypto";
 import { AppError } from "../errors/AppError.ts";
 
+const isUniqueViolation = (error: unknown): boolean =>
+    typeof error === "object" && error !== null && (error as { code?: string }).code === "23505";
+
 export const registerUserService = async (user:RegisterType) => {
     const password_hash = await hashPassword(user.password);
     const inputs =  {
@@ -13,14 +16,30 @@ export const registerUserService = async (user:RegisterType) => {
      password_hash: password_hash,
      userType: user.userType
     }
-    const newUser = await registerUser(inputs);
+    let newUser;
+    try {
+        newUser = await registerUser(inputs);
+    } catch (error) {
+        if (isUniqueViolation(error)) {
+            throw new AppError("An account with this email already exists", 409);
+        }
+        throw error;
+    }
     if(!newUser){
         throw new AppError("User registration failed",500);
     }
     return newUser;
 }
 export const updateUserService = async (name: string, email: string,userId: string) => {
-    const updatedUser = await updateUser(name, email,userId);  
+    let updatedUser;
+    try {
+        updatedUser = await updateUser(name, email,userId);
+    } catch (error) {
+        if (isUniqueViolation(error)) {
+            throw new AppError("An account with this email already exists", 409);
+        }
+        throw error;
+    }
     if (!updatedUser) {
         throw new AppError("User not found", 404);
     }
@@ -116,6 +135,3 @@ const new_sessionInfo = {
 return new_sessionInfo;
 
 }
-
-
-

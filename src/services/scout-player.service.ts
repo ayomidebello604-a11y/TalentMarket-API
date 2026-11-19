@@ -27,7 +27,16 @@ const playerProfile = await getPlayerProfileById(playerId);
 if (!playerProfile) {
     throw new AppError("Player profile not found", 404);
 }
-const scoutingDetails = await addPlayerToScout(scoutId, playerId);
+let scoutingDetails;
+try {
+    scoutingDetails = await addPlayerToScout(scoutId, playerId);
+} catch (error) {
+    // 23503 = foreign key violation: the scout has no row in the scouts table yet.
+    if (typeof error === "object" && error !== null && (error as { code?: string }).code === "23503") {
+        throw new AppError("Scout profile not found. Create your scout profile first", 404);
+    }
+    throw error;
+}
 if (!scoutingDetails) {
     throw new AppError("You are already scouting this player", 409);
 }

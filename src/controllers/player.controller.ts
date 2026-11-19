@@ -9,6 +9,7 @@ import {
     deletePlayerProfileService 
 } from "../services/player.service.ts";
 import type { playerInput, updatePlayerInput } from "../schemas/user.schema.ts";
+import { isUuid } from "../middlewares/uuid.validation.ts";
 
 export const getAllPlayers = async (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -107,6 +108,10 @@ export const deletePlayerProfile = async (req: Request, res: Response, next: Nex
         const targetPlayerId = (userRole === "admin" && (req.query.playerId as string || req.body?.playerId)) 
             ? ((req.query.playerId as string) || req.body?.playerId) 
             : loggedInUserId;
+
+        if (!isUuid(targetPlayerId)) {
+            return res.status(400).json({ message: "Invalid playerId: must be a valid UUID" });
+        }
 
         // If role = user, verify against the userId from the access token
         if (userRole !== "admin" && targetPlayerId !== loggedInUserId) {

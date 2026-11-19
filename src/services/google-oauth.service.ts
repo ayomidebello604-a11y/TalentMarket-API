@@ -55,10 +55,11 @@ export const googleAuthService = async (
         throw new AppError("Google authentication failed", 500);
     }
 
-    // 3. Generate application access token
+    // 3. Generate application access token (role is the account type, as in password login)
+    const role = user.user_type ?? user.role;
     const access_token = await generateToken(
         user.user_id,
-        user.role
+        role
     );
 
     // 4. Generate refresh token
@@ -91,7 +92,7 @@ export const googleAuthService = async (
 
     // 8. Return authentication details
     return {
-        user: safeUser,
+        user: { ...safeUser, role },
         access_token,
         refresh_token,
         session_id,

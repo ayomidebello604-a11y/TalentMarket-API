@@ -94,10 +94,16 @@ export const deleteScout = async (req: Request<{ scoutId: string }>, res: Respon
         const scoutId = req.params.scoutId;
         const loggedInUserId = req.userId;
 
+        const userRole = req.userRole ?? "user";
+
         if (!loggedInUserId) {
             return res.status(401).json({ message: "Authentication required" });
         }
 
+        // Only admin or the scout themselves can delete the profile
+        if (userRole !== "admin" && scoutId !== loggedInUserId) {
+            return res.status(403).json({ message: "You can only delete your own scout profile" });
+        }
 
         await deleteScoutService(scoutId);
         res.status(200).json({
@@ -107,4 +113,4 @@ export const deleteScout = async (req: Request<{ scoutId: string }>, res: Respon
     } catch(error) {
         next(error);
     }
-};                      
+};

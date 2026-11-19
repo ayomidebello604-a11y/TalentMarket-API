@@ -2,12 +2,13 @@
 
 A secure, scalable RESTful API for football talent discovery, player management, and scouting. TalentMarket provides authentication, player and scout profiles, scouting relationships, and role-based access control through a modular backend architecture.
 
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-7.x-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Express](https://img.shields.io/badge/Express-5.x-000000?logo=express&logoColor=white)](https://expressjs.com/)
-[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Database-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
 [![Prisma](https://img.shields.io/badge/Prisma-7-2D3748?logo=prisma&logoColor=white)](https://www.prisma.io/)
 [![Redis](https://img.shields.io/badge/Redis-Caching-DC382D?logo=redis&logoColor=white)](https://redis.io/)
 [![Zod](https://img.shields.io/badge/Zod-Validation-3E67B1)](https://zod.dev/)
+[![Vitest](https://img.shields.io/badge/Tested%20with-Vitest-6E9F18?logo=vitest&logoColor=white)](https://vitest.dev/)
 
 ---
 
@@ -29,13 +30,14 @@ It supports:
 - Role-based access control.
 - Player and scout profile management.
 - Scout-player relationship management.
-- Input validation using Zod.
+- Input validation using Zod, including UUID validation of route parameters.
 - PostgreSQL database integration.
 - Prisma ORM for selected database operations.
 - Redis caching for player listings.
-- Request rate limiting.
+- Redis-backed request rate limiting.
 - Security headers using Helmet.
 - Centralized error handling.
+- An automated unit and integration test suite (Vitest and Supertest).
 
 ---
 
@@ -50,7 +52,7 @@ It supports:
 | `pg` | PostgreSQL connection pooling and parameterized queries |
 | Prisma 7 | ORM for selected database operations |
 | `@prisma/adapter-pg` | PostgreSQL adapter for Prisma |
-| Redis | Caching and cache invalidation |
+| Redis | Caching, cache invalidation and rate-limit storage |
 | Jose | JWT creation and verification |
 | Argon2 | Password hashing and verification |
 | Google Auth Library | Google OAuth 2.0 authentication |
@@ -59,6 +61,8 @@ It supports:
 | CORS | Cross-origin resource sharing |
 | Express Rate Limit | Login and registration rate limiting |
 | Cookie Parser | HTTP cookie parsing |
+| Vitest | Unit and integration test runner |
+| Supertest | HTTP assertions for integration tests |
 
 ---
 
@@ -98,6 +102,7 @@ TalentMarket-API/
 │   │   ├── auth.validation.ts
 │   │   ├── player.validation.ts
 │   │   ├── scout.validation.ts
+│   │   ├── uuid.validation.ts
 │   │   └── logger.middleware.ts
 │   │
 │   ├── repositories/
@@ -133,6 +138,18 @@ TalentMarket-API/
 │   ├── app.ts
 │   └── index.ts
 │
+├── tests/
+│   ├── db/
+│   │   └── schema.sql
+│   ├── helpers/
+│   │   └── integration.ts
+│   ├── integration/
+│   ├── setup/
+│   ├── unit/
+│   └── tsconfig.json
+│
+├── docker-compose.test.yml
+├── vitest.config.ts
 ├── prisma.config.ts
 ├── package.json
 ├── tsconfig.json
@@ -201,13 +218,15 @@ The `users` table stores account information and authentication details.
 | Column | Description |
 |---|---|
 | `user_id` | Unique UUID identifying each user |
-| `name` | User's full name |
-| `email` | Unique email address |
+| `name` | User's full name (up to 50 characters) |
+| `email` | Unique email address (up to 30 characters) |
 | `password_hash` | Argon2 password hash; nullable for Google accounts |
 | `google_id` | Unique Google account identifier |
 | `user_type` | Account type: `player` or `scout` |
-| `role` | Authorization role |
+| `role` | Database role: `user` or `admin` |
 | `created_at` | Account creation timestamp |
+
+The `role` inside access tokens is the account type (`player` or `scout`) for both password and Google accounts. Admin tokens carry the role `admin`.
 
 #### 2. Players
 
@@ -222,10 +241,10 @@ The `players` table stores additional information about football players.
 
 Supported player positions:
 
-- `gk` – Goalkeeper
-- `def` – Defender
-- `mid` – Midfielder
-- `fwd` – Forward
+- `gk` - Goalkeeper
+- `def` - Defender
+- `mid` - Midfielder
+- `fwd` - Forward
 
 Player ratings are restricted to integers between 49 and 100.
 
@@ -237,6 +256,8 @@ The `scouts` table stores additional information about scouts.
 |---|---|
 | `scout_id` | References the corresponding user ID |
 | `contact_details` | Scout contact information |
+
+A scout must create a scout profile before they can add players to their list.
 
 #### 4. Scout Players
 
@@ -311,6 +332,16 @@ Example:
 Authorization: Bearer YOUR_ACCESS_TOKEN
 ```
 
+Token failures return `401`:
+
+| Case | Response message |
+|---|---|
+| Missing header or not a `Bearer` token | `Authorization header missing or malformed` |
+| Empty token | `Token not provided` |
+| Expired token | `Token expired` |
+| Malformed token or wrong signature | `Invalid token` |
+| Token without a subject or role | `Invalid token payload` |
+
 ### 3. Refresh-Token Rotation
 
 Refresh tokens are used to obtain new access tokens without requiring users to log in repeatedly.
@@ -356,6 +387,8 @@ Users select their account type when initiating Google authentication:
 - `player`
 - `scout`
 
+The access token issued after Google sign-in carries that account type as its role, exactly like a password login.
+
 For security, an existing account with the same email address is not automatically linked to a Google account.
 
 ---
@@ -372,10 +405,10 @@ Security is integrated throughout the application.
 | Session management | Database-backed refresh-token sessions |
 | Token rotation | Transactional PostgreSQL operations |
 | OAuth protection | Random state validation |
-| Input validation | Zod |
+| Input validation | Zod and UUID parameter checks |
 | HTTP security headers | Helmet |
 | Cross-origin protection | CORS configuration |
-| Rate limiting | Express Rate Limit |
+| Rate limiting | Express Rate Limit with a Redis store |
 | Database query protection | Parameterized SQL queries |
 | Cookie protection | HTTP-only cookies |
 
@@ -388,11 +421,18 @@ Login and registration endpoints have separate rate limits.
 | Login | 100 requests | 15 minutes |
 | Registration | 50 requests | 30 minutes |
 
-The current rate-limit configuration uses the default in-memory store.
+Counters are stored in Redis (keys prefixed with `rl:login:` and `rl:register:`), so they are shared across API instances. Exceeding a limit returns `429`.
 
 ### Input Validation
 
-Zod validates incoming registration, login, player-profile, and scout-profile data.
+Zod validates incoming registration, login, user-update, player-profile, and scout-profile data.
+
+Registration and update validation includes:
+
+- Name: required, up to 50 characters.
+- Email: valid format, up to 30 characters.
+- Password (registration and login): at least 8 characters, at most 50 on registration.
+- User type (registration): `player` or `scout`.
 
 Player-profile validation includes:
 
@@ -403,6 +443,8 @@ Player-profile validation includes:
 Scout-profile validation requires contact details between 11 and 30 characters.
 
 Strict validation is applied to player and scout profile creation, rejecting unexpected properties.
+
+Route parameters named `id`, `scoutId` and `playerId` (and the `playerId` an admin sends when deleting a player profile) must be valid UUIDs. Anything else is rejected with `400` before reaching the database.
 
 ---
 
@@ -455,6 +497,7 @@ Make sure the following are installed:
 - [PostgreSQL](https://www.postgresql.org/)
 - [Redis](https://redis.io/)
 - [Git](https://git-scm.com/)
+- [Docker](https://www.docker.com/) (optional for development, used by the test suite)
 
 A Google Cloud project with OAuth 2.0 credentials is also required if you want to use Google authentication.
 
@@ -606,6 +649,8 @@ All endpoints are grouped according to their respective resources.
 http://localhost:3000/api
 ```
 
+Unknown routes return `404` with `{ "message": "Route Not Found", "requestedURL": "..." }`. A request body that is not valid JSON returns `400` with `{ "message": "Invalid JSON in request body" }`.
+
 ### 1. Authentication and User Management
 
 Base route:
@@ -645,6 +690,8 @@ Supported user types:
 - `player`
 - `scout`
 
+Returns `201` with the created user (without the password hash). An email that is already registered returns `409`.
+
 #### Login
 
 **POST** `/api/users/login`
@@ -662,6 +709,8 @@ A successful login returns user information and an access token, and sets an HTT
 
 The current login response also includes the refresh token in its JSON payload. The cookie is the intended mechanism for subsequent refresh requests.
 
+Errors: `404` unknown email, `401` wrong password, `400` for an account that only supports Google login.
+
 #### Google Authentication
 
 **GET** `/api/users/google?user_type=player`
@@ -670,7 +719,7 @@ or
 
 **GET** `/api/users/google?user_type=scout`
 
-The endpoint initiates the Google OAuth flow and redirects the user to Google's authentication page.
+The endpoint initiates the Google OAuth flow and redirects the user to Google's authentication page. A missing or invalid `user_type` returns `400`.
 
 After authentication, Google redirects to:
 
@@ -678,13 +727,15 @@ After authentication, Google redirects to:
 /api/users/google/callback
 ```
 
+The callback returns the user, an access token and session details (the refresh token is set as a cookie and is not part of the JSON body). An invalid OAuth state returns `401`, and an email that already belongs to a non-Google account returns `409`.
+
 #### Refresh Access Token
 
 **POST** `/api/users/refresh`
 
 No request body is required.
 
-The endpoint reads the refresh token from the HTTP-only cookie, validates it, rotates it, and returns a new access token.
+The endpoint reads the refresh token from the HTTP-only cookie, validates it, rotates it, and returns a new access token. A missing, unknown, expired or already used token returns `401`.
 
 #### Logout
 
@@ -702,7 +753,7 @@ It also requires the refresh-token cookie.
 
 **PUT** `/api/users/update`
 
-Request body:
+Request body (both fields are required):
 
 ```json
 {
@@ -711,11 +762,13 @@ Request body:
 }
 ```
 
+An invalid body returns `400`, and an email that belongs to another user returns `409`.
+
 #### Delete User
 
 **DELETE** `/api/users/:id`
 
-Requires an admin access token.
+Requires an admin access token. The `id` must be a UUID.
 
 ---
 
@@ -754,7 +807,7 @@ Request body:
 }
 ```
 
-The player ID is obtained from the authenticated user's access token.
+The player ID is obtained from the authenticated user's access token. A second profile for the same user returns `409`.
 
 #### Retrieve All Players
 
@@ -762,13 +815,13 @@ The player ID is obtained from the authenticated user's access token.
 
 Returns player profiles ordered by ratings in descending order.
 
-The response includes available user information such as name and email.
+The response includes available user information such as name and email. Returns `404` when there are no players.
 
 #### Search Players by Name
 
 **GET** `/api/players/name?name=Victor`
 
-Searches player accounts using the supplied name.
+Searches player accounts using the supplied name (partial, case-insensitive match). The `name` query is required.
 
 #### Filter Players by Position
 
@@ -782,6 +835,8 @@ def
 mid
 fwd
 ```
+
+The `position` query is required. Returns `404` when no player matches.
 
 #### Update Player Profile
 
@@ -798,7 +853,7 @@ Request body:
 
 All profile fields are optional during updates.
 
-The operation updates the authenticated user's profile.
+The operation updates the authenticated user's profile. Returns `404` when the user has no profile.
 
 #### Delete Player Profile
 
@@ -806,13 +861,15 @@ The operation updates the authenticated user's profile.
 
 A player can delete their own profile.
 
-An admin can specify a target player using the `playerId` query parameter.
+An admin can specify a target player using the `playerId` query parameter (or body field). It must be a UUID.
 
 Example:
 
 ```text
 DELETE /api/players?playerId=PLAYER_UUID
 ```
+
+Scouts cannot use this endpoint (`403`).
 
 ---
 
@@ -848,7 +905,7 @@ Request body:
 }
 ```
 
-The scout ID is obtained from the authenticated user's access token.
+The scout ID is obtained from the authenticated user's access token. A second profile for the same user returns `409`.
 
 #### Retrieve All Scouts
 
@@ -870,7 +927,7 @@ GET /api/scouts/SCOUT_UUID
 
 **PUT** `/api/scouts/:scoutId`
 
-Requires the scout themselves or an admin.
+Requires the scout themselves or an admin. Any other user receives `403`.
 
 Request body:
 
@@ -884,7 +941,7 @@ Request body:
 
 **DELETE** `/api/scouts/:scoutId`
 
-Accepts authenticated scout or admin roles.
+Requires the scout themselves or an admin. A scout deleting another scout's profile receives `403`, and players receive `403`.
 
 ---
 
@@ -922,6 +979,7 @@ POST /api/scout-players/PLAYER_UUID
 The service verifies that:
 
 - The authenticated user is a scout.
+- The scout has created a scout profile.
 - The target user exists and is a player.
 - The player has an existing player profile.
 - The relationship does not already exist.
@@ -930,19 +988,19 @@ The service verifies that:
 
 **GET** `/api/scout-players`
 
-Returns player IDs associated with the authenticated account.
+Returns player IDs associated with the authenticated account. Returns `404` when the list is empty.
 
 #### Retrieve Scouts Associated with a Player
 
 **GET** `/api/scout-players/:playerId/scouts`
 
-Returns the scouts associated with the specified player.
+Returns the scouts associated with the specified player. Returns `404` when there are none.
 
 #### Remove a Player from a Scout's List
 
 **DELETE** `/api/scout-players/:playerId`
 
-Removes the specified player relationship from the authenticated scout's list.
+Removes the specified player relationship from the authenticated scout's list. Only scout accounts can complete this action.
 
 ---
 
@@ -960,8 +1018,8 @@ The global error handler is registered in `src/app.ts`.
 |---|---|
 | 200 | Request completed successfully |
 | 201 | Resource created successfully |
-| 400 | Invalid request or validation failure |
-| 401 | Authentication required or invalid credentials |
+| 400 | Invalid request, validation failure or malformed UUID |
+| 401 | Authentication required, invalid or expired token, or invalid credentials |
 | 403 | Insufficient permissions |
 | 404 | Requested resource not found |
 | 409 | Resource conflict or duplicate entry |
@@ -1000,12 +1058,72 @@ The server port is currently defined directly in `src/index.ts`.
 
 ---
 
-## 🧪 Testing and API Development
+## 🧪 Testing
 
-During development, API endpoints can be tested using tools such as:
+The project has an automated test suite built with **Vitest** and **Supertest**.
 
-- [Postman](https://www.postman.com/)
-- [Thunder Client](https://www.thunderclient.com/)
+| Type | Location | What it covers |
+|---|---|---|
+| Unit | `tests/unit` | Services and utilities with their repositories mocked |
+| Integration | `tests/integration` | Every route through the real Express app, real auth middleware, a real PostgreSQL database (both `pg` and Prisma) and real Redis. Only Google OAuth is mocked, so no real internet access is needed. |
+
+### Test safety
+
+The tests never use your development or production database.
+
+- They read only `TEST_*` environment variables and ignore your `.env` values.
+- Before anything runs, a guard refuses to start unless `NODE_ENV` is `test`, the database name ends in `_test`, and both PostgreSQL and Redis are on a local host.
+- The test database and Redis run in their own Docker containers (`docker-compose.test.yml`) on separate ports, with data kept in memory.
+- The schema in `tests/db/schema.sql` is applied only when the test database is empty. Nothing is dropped or truncated.
+- Integration tests create users with emails ending in `@it.test` and remove them (and the related rows and Redis keys) after every test. Keep the test database dedicated to tests.
+
+### Running the tests
+
+Start the test PostgreSQL (port 5433) and Redis (port 6380):
+
+```bash
+npm run test:db:up
+```
+
+Generate the Prisma client once if you have not already:
+
+```bash
+npx prisma generate
+```
+
+Then run the tests:
+
+```bash
+npm test                    # unit and integration tests
+npm run test:unit           # unit tests only (no database needed)
+npm run test:integration    # integration tests only
+npm run test:coverage       # everything, with a coverage report in coverage/
+npm run test:watch          # re-run on file changes
+npm run typecheck           # type-check the source and the tests
+```
+
+Stop and discard the test database when you are done:
+
+```bash
+npm run test:db:down
+```
+
+### Optional test settings
+
+The defaults work with `docker-compose.test.yml`. Override them only if your test services run elsewhere.
+
+| Variable | Default |
+|---|---|
+| `TEST_DB_HOST` | `localhost` |
+| `TEST_DB_PORT` | `5433` |
+| `TEST_DB_USER` | `postgres` |
+| `TEST_DB_PASSWORD` | `postgres` |
+| `TEST_DB_NAME` | `talentmarket_test` |
+| `TEST_REDIS_URL` | `redis://localhost:6380` |
+
+### Testing the API manually
+
+During development, endpoints can also be tried with tools such as [Postman](https://www.postman.com/) or [Thunder Client](https://www.thunderclient.com/).
 
 For protected endpoints, provide the access token through the Authorization header.
 
@@ -1015,8 +1133,6 @@ Authorization: Bearer YOUR_ACCESS_TOKEN
 
 For refresh and logout operations, ensure your API client maintains the refresh-token cookie.
 
-The current `package.json` does not yet define an automated test suite.
-
 ---
 
 ## 📌 Current Implementation Notes
@@ -1025,12 +1141,13 @@ The current `package.json` does not yet define an automated test suite.
 - PostgreSQL is the primary database.
 - Both parameterized SQL queries and Prisma 7 are used for database operations.
 - Prisma is currently applied to scout-profile CRUD operations.
-- Redis is used to cache the all-player listing.
+- Redis is used to cache the all-player listing and to store rate-limit counters.
 - Cache invalidation is performed after successful player-profile mutations.
 - Google OAuth supports both player and scout account types.
 - Refresh tokens are hashed before being stored in the database.
 - Refresh-token rotation uses PostgreSQL transactions.
 - Authentication and authorization are enforced through middleware and service-level checks.
+- Duplicate emails, malformed UUIDs and invalid or expired tokens return client errors (409, 400 and 401) instead of 500.
 
 ---
 

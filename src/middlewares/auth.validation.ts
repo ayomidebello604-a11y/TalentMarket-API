@@ -1,6 +1,6 @@
 import type { Request, Response, NextFunction } from "express";
-import { RegisterSchema,LoginSchema } from "../schemas/auth.schema.ts";
-import { jwtVerify } from "jose";
+import { RegisterSchema,LoginSchema,UpdateUserSchema } from "../schemas/auth.schema.ts";
+import { jwtVerify, errors } from "jose";
 import { AppError } from "../errors/AppError.ts";
 
 export const validateRegisterBody = (req: Request, res: Response, next: NextFunction) => {
@@ -48,6 +48,32 @@ export const validateLoginBody = (req: Request, res: Response, next: NextFunctio
     next();
 };
 
+export const validateUpdateBody = (req: Request, res: Response, next: NextFunction) => {
+    const validatedUpdateBody = UpdateUserSchema.safeParse(req.body);
+
+    if (!validatedUpdateBody.success) {
+        const errorDetails = validatedUpdateBody.error.issues.map((issue) => {
+            const field = issue.path.length > 0
+                ? issue.path.map(String).join(".").replace(/([a-z])([A-Z])/g, "$1 $2")
+                : "Request body";
+
+            const readableField = field.charAt(0).toUpperCase() + field.slice(1);
+
+            return `${readableField}: ${issue.message}`;
+        });
+
+        return next(
+            new AppError(
+                `Please check your update details: ${errorDetails.join("; ")}`,
+                400
+            )
+        );
+    }
+
+    req.body = validatedUpdateBody.data;
+    next();
+};
+
 export const verifyUserToken = async (req: Request, res: Response, next: NextFunction) => {
     try { 
        const authHeader = req.headers.authorization;
@@ -72,6 +98,12 @@ export const verifyUserToken = async (req: Request, res: Response, next: NextFun
        req.userRole = payload.role;
        next();
     } catch(error) {
+       if (error instanceof errors.JWTExpired) {
+           return next(new AppError("Token expired", 401));
+       }
+       if (error instanceof errors.JOSEError) {
+           return next(new AppError("Invalid token", 401));
+       }
        next(error);
     }
 };
@@ -87,4 +119,3 @@ export const authorizeRoles = (...allowedRoles: string[]) => {
         next();
     };
 };
-

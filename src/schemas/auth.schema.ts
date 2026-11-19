@@ -5,13 +5,18 @@ export const LoginSchema = z.object({
 });
 
 export const RegisterSchema = z.object({
-    name: z.string().trim().nonempty().min(1),
+    name: z.string().trim().nonempty().max(50),
     email: z.email().nonempty().max(30),
     password: z.string().trim().nonempty().min(8).max(50),
     userType: z.literal(["player", "scout"]),
 })
 
 
+
+export const UpdateUserSchema = z.object({
+    name: z.string().trim().nonempty().max(50),
+    email: z.email().nonempty().max(30),
+});
 
 export type  LoginType = z.infer<typeof LoginSchema>;
 export type RegisterType = z.infer<typeof RegisterSchema>;

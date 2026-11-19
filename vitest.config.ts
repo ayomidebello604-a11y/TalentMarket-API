@@ -1,5 +1,5 @@
 import { defineConfig } from "vitest/config";
-import { testEnv } from "../TalentMarket/tests/setup/test-env.ts";
+import { testEnv } from "./tests/setup/test-env.ts";
 
 export default defineConfig({
   test: {

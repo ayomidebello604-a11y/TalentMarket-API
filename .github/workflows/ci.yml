@@ -45,6 +45,7 @@ jobs:
       TEST_DB_PASSWORD: postgres
       TEST_DB_NAME: talentmarket_test
       TEST_REDIS_URL: redis://localhost:6379
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/talentmarket_test
 
     steps:
       - name: Checkout repository

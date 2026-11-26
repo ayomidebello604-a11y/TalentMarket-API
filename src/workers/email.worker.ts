@@ -1,27 +1,26 @@
 import { Worker } from "bullmq";
+import { sendWelcomeEmail } from "../services/email.service.ts";
 import connection from "../config/bullmq.ts";
 
 export const welcomeEmailWorker = new Worker(
   "email-queue",
   async (job) => {
-
-    console.log("Worker received job:", job.id, job.name);
-    if (job.name === "welcome-email") {
-
-      if (job.attemptsMade < 2) {
-        throw new Error("Temporary email service failure");
+    switch (job.name) {
+      case "welcome-email": {
+        const { name, email } = job.data;
+        await sendWelcomeEmail(email, name);
+        console.log(`Welcome email sent to ${email}`);
+        break;
       }
-
-      const { name, email } = job.data;
-
-      console.log("Sending welcome email...");
-      console.log("Recipient:", email);
-      console.log("Name:", name);
-      console.log("Welcome email processed successfully!");
-      return;
+      case "password-reset": {
+        const { email,resetLink } = job.data;
+        console.log(`Password reset email would be sent to ${email}`);
+        console.log(`This is the Link to be sent ${resetLink}`)
+        break;
+      }
+      default:
+        throw new Error(`Unknown job name: ${job.name}`);
     }
-
-    throw new Error(`Unknown job name: ${job.name}`);
   },
   { connection }
 );

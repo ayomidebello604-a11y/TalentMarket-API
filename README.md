@@ -35,6 +35,7 @@ It supports:
 - Prisma ORM for selected database operations.
 - Redis caching for player listings.
 - Redis-backed request rate limiting.
+- Asynchronous background email job queue (BullMQ) and transactional emails (Resend) for user registration welcome emails and admin notifications.
 - Security headers using Helmet.
 - Centralized error handling.
 - An automated unit and integration test suite (Vitest and Supertest).
@@ -53,6 +54,9 @@ It supports:
 | Prisma 7 | ORM for selected database operations |
 | `@prisma/adapter-pg` | PostgreSQL adapter for Prisma |
 | Redis | Caching, cache invalidation and rate-limit storage |
+| BullMQ | Redis-backed background job queue and worker processing |
+| `ioredis` | Redis client used by BullMQ |
+| Resend | Transactional HTML email delivery |
 | Jose | JWT creation and verification |
 | Argon2 | Password hashing and verification |
 | Google Auth Library | Google OAuth 2.0 authentication |
@@ -83,6 +87,7 @@ TalentMarket-API/
 ├── src/
 │   │
 │   ├── config/
+│   │   ├── bullmq.ts
 │   │   ├── database.ts
 │   │   ├── google-oauth.ts
 │   │   ├── prisma.ts
@@ -98,17 +103,24 @@ TalentMarket-API/
 │   ├── errors/
 │   │   └── AppError.ts
 │   │
+│   ├── jobs/
+│   │   └── email.job.ts
+│   │
 │   ├── middlewares/
 │   │   ├── auth.validation.ts
 │   │   ├── player.validation.ts
 │   │   ├── scout.validation.ts
-│   │   ├── uuid.validation.ts
+│   │   └── uuid.validation.ts
 │   │   └── logger.middleware.ts
+│   │
+│   ├── queues/
+│   │   └── email.queue.ts
 │   │
 │   ├── repositories/
 │   │   ├── auth.repository.ts
 │   │   ├── player.repository.ts
 │   │   ├── scout.prisma.repository.ts
+│   │   ├── scout.repository.ts
 │   │   └── scout-player.repository.ts
 │   │
 │   ├── routes/
@@ -123,6 +135,7 @@ TalentMarket-API/
 │   │
 │   ├── services/
 │   │   ├── auth.service.ts
+│   │   ├── email.service.ts
 │   │   ├── google-oauth.service.ts
 │   │   ├── player.service.ts
 │   │   ├── scout.service.ts
@@ -134,6 +147,9 @@ TalentMarket-API/
 │   │   ├── jwt.ts
 │   │   ├── password.ts
 │   │   └── invalidatecache.utils.ts
+│   │
+│   ├── workers/
+│   │   └── email.worker.ts
 │   │
 │   ├── app.ts
 │   └── index.ts
@@ -148,6 +164,8 @@ TalentMarket-API/
 │   ├── unit/
 │   └── tsconfig.json
 │
+├── Dockerfile
+├── docker-compose.yml
 ├── docker-compose.test.yml
 ├── vitest.config.ts
 ├── prisma.config.ts
@@ -484,6 +502,22 @@ Redis operations use timeout handling to prevent individual cache requests from 
 
 ---
 
+## 📨 Background Email Queue (BullMQ & Resend)
+
+User registration offloads email delivery to a Redis-backed **BullMQ** queue (`email-queue`) defined in `src/queues/email.queue.ts` and `src/jobs/email.job.ts`, processed by `welcomeEmailWorker` in `src/workers/email.worker.ts`, and delivered via **Resend** in `src/services/email.service.ts`.
+
+### Queued Jobs
+
+| Job Name | Trigger | Priority | Attempts & Backoff | Behavior |
+|---|---|---|---|---|
+| `welcome-email` | `POST /api/users/register` | `5` | 3 attempts, exponential (`2000ms`) | Sends a branded army-green HTML welcome email to the new user via Resend |
+| `adminNotification` | `POST /api/users/register` | `5` | 3 attempts, exponential (`2000ms`) | Sends an HTML registration summary to `ADMIN_EMAIL` via Resend |
+| `password-reset` | `addPasswordResetJob` | `1` | 3 attempts, exponential (`5000ms`) | Logs the password reset email and link (ready for email template hookup) |
+
+Completed jobs are retained for `3600` seconds (up to `1000` jobs) and failed jobs for `86400` seconds (up to `5000` jobs). `src/config/bullmq.ts` connects to `localhost:6379` with `maxRetriesPerRequest: null`.
+
+---
+
 ## 🚀 Getting Started
 
 Follow these instructions to set up and run TalentMarket locally.
@@ -543,6 +577,11 @@ REDIS_URL=redis://localhost:6379
 GOOGLE_CLIENT_ID=your_google_client_id
 GOOGLE_CLIENT_SECRET=your_google_client_secret
 GOOGLE_CALLBACK_URL=http://localhost:3000/api/users/google/callback
+
+# Resend Email Service & Notifications
+RESEND_API_KEY=re_your_resend_api_key
+RESEND_FROM_EMAIL=onboarding@yourdomain.com
+ADMIN_EMAIL=admin@yourdomain.com
 ```
 
 Replace the example values with your actual configuration.
@@ -553,6 +592,7 @@ Replace the example values with your actual configuration.
 - `DATABASE_URL` is used by Prisma 7.
 - `REDIS_URL` specifies the Redis connection.
 - `JWT_SECRET` is used to sign and verify access tokens.
+- `RESEND_API_KEY`, `RESEND_FROM_EMAIL`, and `ADMIN_EMAIL` are used by the email service when sending welcome emails and admin registration notifications.
 - Google OAuth credentials are required only when using Google authentication.
 - Never commit your `.env` file or expose your credentials publicly.
 
@@ -621,8 +661,23 @@ The compiled JavaScript files are generated in the `dist` directory.
 
 ### 7. Start the Server
 
+For production (after building):
+
 ```bash
 npm start
+```
+
+For local development with hot reload (run the API and the email worker in separate terminals):
+
+```bash
+npm run dev          # API server (tsx watch src/index.ts)
+npm run dev:worker   # BullMQ email worker (tsx watch src/workers/email.worker.ts)
+```
+
+Or start PostgreSQL, Redis, and the API container together with Docker Compose:
+
+```bash
+docker compose up -d --build
 ```
 
 The application listens on:
@@ -690,7 +745,7 @@ Supported user types:
 - `player`
 - `scout`
 
-Returns `201` with the created user (without the password hash). An email that is already registered returns `409`.
+Returns `201` with the created user (without the password hash). Upon successful registration, `welcome-email` and `adminNotification` jobs are queued on `email-queue`. An email that is already registered returns `409`.
 
 #### Login
 
@@ -1141,8 +1196,9 @@ For refresh and logout operations, ensure your API client maintains the refresh-
 - PostgreSQL is the primary database.
 - Both parameterized SQL queries and Prisma 7 are used for database operations.
 - Prisma is currently applied to scout-profile CRUD operations.
-- Redis is used to cache the all-player listing and to store rate-limit counters.
+- Redis is used to cache the all-player listing, store rate-limit counters, and back BullMQ job queues.
 - Cache invalidation is performed after successful player-profile mutations.
+- User registration enqueues `welcome-email` and `adminNotification` background jobs processed by `welcomeEmailWorker` and delivered via Resend.
 - Google OAuth supports both player and scout account types.
 - Refresh tokens are hashed before being stored in the database.
 - Refresh-token rotation uses PostgreSQL transactions.

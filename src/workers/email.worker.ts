@@ -1,5 +1,5 @@
 import { Worker } from "bullmq";
-import { sendWelcomeEmail } from "../services/email.service.ts";
+import { sendAdminNotification, sendWelcomeEmail } from "../services/email.service.ts";
 import connection from "../config/bullmq.ts";
 
 export const welcomeEmailWorker = new Worker(
@@ -18,12 +18,19 @@ export const welcomeEmailWorker = new Worker(
         console.log(`This is the Link to be sent ${resetLink}`)
         break;
       }
+      case "adminNotification" : {
+        const {name,email,accountType} = job.data;
+        await sendAdminNotification(email,name,accountType);
+        console.log(`Admin Notification sent`)
+        break;
+      }
       default:
         throw new Error(`Unknown job name: ${job.name}`);
     }
   },
   { connection }
 );
+
 
 welcomeEmailWorker.on("failed", (job, error) => {
   console.log(`Attempt failed for job ${job?.id}:`, error.message);

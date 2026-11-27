@@ -2,6 +2,7 @@ import "dotenv/config";
 import { Resend } from "resend";
 
 let emailClient: Resend | null = null;
+type AccountType = "player" | "scout";
 
 const getEmailClient = (): Resend => {
   if (!emailClient) {
@@ -186,4 +187,71 @@ export const sendWelcomeEmail = async (email: string, name: string) => {
   console.log("Email sent successfully. ID:", data?.id);
 };
 
+const buildAdminNotificationHtml = (
+  email: string,
+  name: string,
+  accountType: AccountType,
+): string => {
+  const details = [
+    ["Name", name],
+    ["Email", email],
+    ["Account type", accountType],
+    ["Registered at", new Date().toISOString()],
+  ];
 
+  const rows = details
+    .map(
+      ([label, value]) => `<tr>
+        <th align="left" style="padding:12px 16px;border-bottom:1px solid #e2e7d3;color:#4b5320;">${escapeHtml(label)}</th>
+        <td style="padding:12px 16px;border-bottom:1px solid #e2e7d3;color:#2c331c;">${escapeHtml(value)}</td>
+      </tr>`,
+    )
+    .join("");
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>New TalentMarket registration</title>
+</head>
+<body style="margin:0;padding:32px 16px;background-color:#eef1e6;font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#1f2414;">
+  <main style="max-width:600px;margin:0 auto;padding:28px;background-color:#ffffff;border:1px solid #d9e0c7;border-radius:16px;">
+    <h1 style="margin:0 0 8px;color:#4b5320;font-size:24px;">New user registration</h1>
+    <p style="margin:0 0 20px;color:#5f6849;">A new user has joined TalentMarket.</p>
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;">
+      <tbody>${rows}</tbody>
+    </table>
+  </main>
+</body>
+</html>`;
+};
+
+export const sendAdminNotification = async (
+  email: string,
+  name: string,
+  accountType: AccountType,
+) => {
+  const sender = process.env.RESEND_FROM_EMAIL;
+  if (!sender) {
+    throw new Error("RESEND_FROM_EMAIL is not configured");
+  }
+
+  const adminEmail = process.env.ADMIN_EMAIL;
+  if (!adminEmail) {
+    throw new Error("ADMIN_EMAIL is not configured");
+  }
+
+  const { data, error } = await getEmailClient().emails.send({
+    from: sender,
+    to: adminEmail,
+    subject: `New TalentMarket ${accountType} registration`,
+    html: buildAdminNotificationHtml(email, name, accountType),
+  });
+
+  if (error) {
+    throw new Error(`Failed to send admin notification: ${error.message}`);
+  }
+
+  console.log("Admin notification sent successfully. ID:", data?.id);
+};

@@ -3,7 +3,7 @@ import { AppError } from "../errors/AppError.ts";
 import { randomBytes } from "node:crypto";
 import { googleClient } from "../config/google-oauth.ts";
 import { googleAuthService } from "../services/google-oauth.service.ts";
-import { addWelcomeEmailJob } from "../jobs/email.job.ts";
+import { addAdminNotificationJob, addWelcomeEmailJob } from "../jobs/email.job.ts";
 import { LoginUserService,logoutUserService, registerUserService, updateUserService,verifyTokenService, deleteUserService } from "../services/auth.service.ts";
 
 export const registerUser = async (req: Request, res: Response, next: NextFunction) => {
@@ -11,6 +11,7 @@ export const registerUser = async (req: Request, res: Response, next: NextFuncti
         const input = req.validatedRegisterBody;
         const newUser = await registerUserService(input);
         await addWelcomeEmailJob(newUser.email, newUser.name);
+        await addAdminNotificationJob(newUser.email, newUser.name, input.userType);
         const { password_hash, ...userWithoutPassword } = newUser as (typeof newUser & { password_hash?: string });
         res.status(201).json({
             message: "User registered successfully",

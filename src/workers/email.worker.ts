@@ -1,5 +1,6 @@
 import { Worker } from "bullmq";
 import { sendAdminNotification, sendWelcomeEmail } from "../services/email.service.ts";
+import { deadLetterQueue } from "../queues/dead-letter.queue.ts";
 import connection from "../config/bullmq.ts";
 
 export const welcomeEmailWorker = new Worker(
@@ -32,9 +33,40 @@ export const welcomeEmailWorker = new Worker(
 );
 
 
-welcomeEmailWorker.on("failed", (job, error) => {
-  console.log(`Attempt failed for job ${job?.id}:`, error.message);
-});
+welcomeEmailWorker.on("failed", async (job, err) => {
+  if (!job) {
+    console.error("A job failed, but no job object was provided:", err.message);
+    return;
+  } 
+ const maxAttempts = job.opts.attempts ?? 1
+
+ if (job.attemptsMade < maxAttempts) {
+    console.warn(
+      `Job ${job.id} (${job.name}) failed on attempt ${job.attemptsMade}/${maxAttempts}; will retry.`
+    );
+    return;
+  }
+await deadLetterQueue.add(
+  "failed-job",
+  {
+    originalJobId: job.id,
+    originalJobName: job.name,
+    originalJobData: job.data,
+    errorMessage: err.message,
+    attempts: job.attemptsMade,
+    failedAt: new Date().toISOString(),
+  },
+  {
+    jobId: `dlq-${job.id}`,
+  }
+);
+
+  console.error(
+    `Job ${job.id} (${job.name}) exhausted all ${maxAttempts} attempts and was moved to dead-letter-queue.`
+  );
+
+
+})
 
 welcomeEmailWorker.on("completed", (job) => {
   console.log(`Job ${job.id} completed successfully!`);
